@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>hakoniwa</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #111;
+        color: #ccc;
+        font-family: monospace;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #app {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      #hud {
+        font-size: 13px;
+        display: flex;
+        gap: 16px;
+      }
+      canvas {
+        image-rendering: pixelated;
+        border: 1px solid #333;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div id="hud">
+        <span id="hud-tick">tick: 0</span>
+        <span id="hud-dirty">dirty: 0 / 0</span>
+        <span id="hud-epoch">epoch: 0</span>
+        <span id="hud-pop">herbivores: 0</span>
+        <button id="btn-pause">pause</button>
+      </div>
+      <canvas id="board"></canvas>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

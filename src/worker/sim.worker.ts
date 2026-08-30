@@ -1,0 +1,88 @@
+import { createSimState, tick, type SimState } from '../sim/loop';
+import type { HerbivoreSnapshot, MainToWorker, WorkerToMain } from '../types';
+
+let state: SimState | null = null;
+let intervalId: ReturnType<typeof setInterval> | null = null;
+
+function post(msg: WorkerToMain, transfer: Transferable[] = []): void {
+  (postMessage as (m: WorkerToMain, t: Transferable[]) => void)(msg, transfer);
+}
+
+function herdSnapshot(s: SimState): HerbivoreSnapshot {
+  // Structured-clone copies, not transfers: the worker keeps owning the live
+  // typed arrays across ticks, so we can't hand off their buffers.
+  return {
+    x: s.herd.x.slice(0, s.herd.count),
+    y: s.herd.y.slice(0, s.herd.count),
+    energy: s.herd.energy.slice(0, s.herd.count),
+    count: s.herd.count,
+  };
+}
+
+function stopLoop(): void {
+  if (intervalId !== null) {
+    clearInterval(intervalId);
+    intervalId = null;
+  }
+}
+
+function startLoop(): void {
+  if (!state || intervalId !== null) return;
+  intervalId = setInterval(() => {
+    if (!state) return;
+    const result = tick(state);
+    post({
+      type: 'tick',
+      tickCount: state.tickCount,
+      dirty: result.dirty,
+      herbivores: herdSnapshot(state),
+    });
+    if (result.epoch !== undefined) {
+      post({ type: 'epoch', epochIndex: result.epoch });
+    }
+  }, state.tickIntervalMs);
+}
+
+self.onmessage = (ev: MessageEvent<MainToWorker>) => {
+  const msg = ev.data;
+  switch (msg.type) {
+    case 'init': {
+      stopLoop();
+      state = createSimState(msg.width, msg.height, msg.tickMs, msg.epochMs, msg.seed);
+      const biomass = state.grass.biomass.slice();
+      const height = state.grass.height.slice();
+      const colorBucket = state.grass.colorBucket.slice();
+      post(
+        {
+          type: 'init-done',
+          width: state.board.width,
+          height: state.board.height,
+          grass: { biomass, height, colorBucket },
+          herbivores: herdSnapshot(state),
+        },
+        [biomass.buffer, height.buffer, colorBucket.buffer],
+      );
+      break;
+    }
+    case 'start':
+      startLoop();
+      break;
+    case 'pause':
+      stopLoop();
+      break;
+    case 'resume':
+      startLoop();
+      break;
+    case 'set-tick-rate':
+      if (state) {
+        state.tickIntervalMs = msg.ms;
+        if (intervalId !== null) {
+          stopLoop();
+          startLoop();
+        }
+      }
+      break;
+  }
+};
+
+post({ type: 'ready' });
