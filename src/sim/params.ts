@@ -11,21 +11,24 @@ export const GRASS_PARAMS = {
   // (see HERBIVORE_PARAMS.excretionRatio / carcassFertility below).
   fertilityCap: 1.0,
   // Fraction of a tile's own biomass it sheds onto the soil of its 8
-  // neighbors each tick (split evenly), as fertility. This is what lets a
-  // grazed-bare tile next to a lush patch recover on its own and eventually
-  // start growing again -- a patch visibly thickens outward. At 0.05 a
-  // biomass-0.8 patch sheds ~0.005 fertility/tick to each neighbor, crossing
-  // the grazeBiomassThreshold-equivalent within a few ticks of standing next
-  // to it.
-  spreadRate: 0.05,
+  // neighbors each tick (split evenly), as fertility -- lets a grazed-bare
+  // tile next to a lush patch recover and start growing again, thickening
+  // outward. Tuned down hard from an initial 0.05: at that rate the
+  // *aggregate* effect across thousands of tiles was strong enough, on its
+  // own, to hold a herd at a permanent ~400-480 plateau instead of ever
+  // crashing to extinction -- animal-independent regrowth stopped being a
+  // slow background process and started actively propping up a die-off. At
+  // 0.002 a herd can still starve out completely, and an animal-free board
+  // still recovers (confirmed: fully regrew to max lushness on its own,
+  // left alone for a few thousand ticks after a total extinction) -- it
+  // just takes real time, the way it should.
+  spreadRate: 0.002,
   // Fraction of a tile's own biomass it returns to its *own* soil each tick,
-  // regardless of grazing -- old leaves and roots turning over. Deliberately
-  // much slower than spreadRate/excretion: while a herd is actually grazing,
-  // scarcity should still bite. This only matters once grazing pressure eases
-  // (or the herd goes extinct) -- otherwise fertility only ever came from
-  // animals, so an animal-free landscape had no way to recover and just
-  // stayed frozen wherever the herd left it.
-  senescenceRate: 0.01,
+  // regardless of grazing -- old leaves and roots turning over, independent
+  // of spreadRate (which needs a neighbor; this doesn't). Kept just as small
+  // for the same reason: it must stay too weak to prop up a herd that would
+  // otherwise starve out.
+  senescenceRate: 0.0001,
 };
 
 export const HERBIVORE_PARAMS = {
