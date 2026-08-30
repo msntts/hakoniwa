@@ -29,7 +29,8 @@ export const CARCASS_DECAYED_COLOR: readonly [number, number, number] = SOIL_COL
 export interface SpriteSheet {
   tileSize: number;
   grassCanvas: HTMLCanvasElement;
-  animalCanvas: HTMLCanvasElement;
+  herbivoreCanvas: HTMLCanvasElement; // design.md: shape encodes diet -- ● = plant-eater
+  carnivoreCanvas: HTMLCanvasElement; // design.md: shape encodes diet -- ▲ = meat-eater
   grassCols: number;
   grassRows: number;
 }
@@ -58,18 +59,35 @@ export function bakeSprites(tileSize: number = TILE_SIZE): SpriteSheet {
     }
   }
 
-  const animalCanvas = document.createElement('canvas');
-  animalCanvas.width = tileSize;
-  animalCanvas.height = tileSize;
-  const actx = animalCanvas.getContext('2d')!;
-  actx.clearRect(0, 0, tileSize, tileSize);
-  actx.fillStyle = '#f2c400';
-  actx.beginPath();
+  const herbivoreCanvas = document.createElement('canvas');
+  herbivoreCanvas.width = tileSize;
+  herbivoreCanvas.height = tileSize;
+  const hctx = herbivoreCanvas.getContext('2d')!;
+  hctx.clearRect(0, 0, tileSize, tileSize);
+  hctx.fillStyle = '#f2c400';
+  hctx.beginPath();
   const r = tileSize * 0.32;
-  actx.arc(tileSize / 2, tileSize / 2, r, 0, Math.PI * 2);
-  actx.fill();
+  hctx.arc(tileSize / 2, tileSize / 2, r, 0, Math.PI * 2);
+  hctx.fill();
 
-  return { tileSize, grassCanvas, animalCanvas, grassCols: heights, grassRows: COLOR_BUCKETS };
+  const carnivoreCanvas = document.createElement('canvas');
+  carnivoreCanvas.width = tileSize;
+  carnivoreCanvas.height = tileSize;
+  const cctx = carnivoreCanvas.getContext('2d')!;
+  cctx.clearRect(0, 0, tileSize, tileSize);
+  cctx.fillStyle = '#e8622e';
+  const cx = tileSize / 2;
+  const top = tileSize * 0.18;
+  const bottom = tileSize * 0.82;
+  const halfWidth = tileSize * 0.34;
+  cctx.beginPath();
+  cctx.moveTo(cx, top);
+  cctx.lineTo(cx + halfWidth, bottom);
+  cctx.lineTo(cx - halfWidth, bottom);
+  cctx.closePath();
+  cctx.fill();
+
+  return { tileSize, grassCanvas, herbivoreCanvas, carnivoreCanvas, grassCols: heights, grassRows: COLOR_BUCKETS };
 }
 
 // Carcasses fade continuously rather than stepping through a handful of

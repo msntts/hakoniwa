@@ -1,14 +1,16 @@
 import type { Board } from './board';
 import { createCarcassState, stepCarcasses, type CarcassState } from './carcass';
+import { createCarnivoreState, seedCarnivores, stepCarnivores, type CarnivoreState } from './carnivore';
 import { createGrassState, deriveHeightAndColor, seedGrass, stepGrass, type GrassState } from './grass';
 import { createHerbivoreState, seedHerbivores, stepHerbivores, type HerbivoreState } from './herbivore';
-import { HERBIVORE_PARAMS } from './params';
+import { CARNIVORE_PARAMS, HERBIVORE_PARAMS } from './params';
 import type { DirtyTile } from '../types';
 
 export interface SimState {
   board: Board;
   grass: GrassState;
   herd: HerbivoreState;
+  predators: CarnivoreState;
   carcasses: CarcassState;
   tickCount: number;
   msSinceEpochStart: number;
@@ -48,14 +50,18 @@ export function createSimState(
   const herd = createHerbivoreState(HERBIVORE_PARAMS.capacity);
   seedHerbivores(herd, board, HERBIVORE_PARAMS.initialCount, rng);
 
-  // Capacity matches the herd's, since a die-off could in principle drop the
-  // whole population as carcasses at once.
-  const carcasses = createCarcassState(HERBIVORE_PARAMS.capacity);
+  const predators = createCarnivoreState(CARNIVORE_PARAMS.capacity);
+  seedCarnivores(predators, board, CARNIVORE_PARAMS.initialCount, rng);
+
+  // Capacity covers both species, since a die-off could in principle drop
+  // either whole population as carcasses at once.
+  const carcasses = createCarcassState(HERBIVORE_PARAMS.capacity + CARNIVORE_PARAMS.capacity);
 
   return {
     board,
     grass,
     herd,
+    predators,
     carcasses,
     tickCount: 0,
     msSinceEpochStart: 0,
@@ -74,6 +80,7 @@ export interface TickResult {
 export function tick(state: SimState): TickResult {
   stepGrass(state.grass, state.board);
   stepHerbivores(state.herd, state.grass, state.carcasses, state.board, state.rng);
+  stepCarnivores(state.predators, state.herd, state.carcasses, state.board, state.rng);
   stepCarcasses(state.carcasses, state.grass, state.board);
   const dirty = deriveHeightAndColor(state.grass, state.board);
 

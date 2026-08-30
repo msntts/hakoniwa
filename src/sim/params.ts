@@ -8,7 +8,7 @@ export const GRASS_PARAMS = {
   // Growth draws down this per-tile soil nutrient stock 1:1 -- no fertility,
   // no growth, regardless of how much biomass is already there or how empty
   // the tile looks. Replenished only through the herbivore/decomposer cycle
-  // (see HERBIVORE_PARAMS.excretionRatio / carcassFertility below).
+  // (see HERBIVORE_PARAMS.excretionRatio / CARCASS_PARAMS below).
   fertilityCap: 1.0,
   // Fraction of a tile's own biomass it sheds onto the soil of its 8
   // neighbors each tick (split evenly), as fertility -- lets a grazed-bare
@@ -25,9 +25,11 @@ export const GRASS_PARAMS = {
   spreadRate: 0.002,
   // Fraction of a tile's own biomass it returns to its *own* soil each tick,
   // regardless of grazing -- old leaves and roots turning over, independent
-  // of spreadRate (which needs a neighbor; this doesn't). Kept just as small
-  // for the same reason: it must stay too weak to prop up a herd that would
-  // otherwise starve out.
+  // of spreadRate (which needs a neighbor; this doesn't). "Grass dies too":
+  // this same fraction is subtracted from the tile's standing biomass, not
+  // just added elsewhere as a free top-up -- real turnover, not a fountain.
+  // Kept just as small as spreadRate for the same reason: it must stay too
+  // weak to prop up a herd that would otherwise starve out.
   senescenceRate: 0.0001,
 };
 
@@ -62,25 +64,71 @@ export const HERBIVORE_PARAMS = {
 
   grazeBiomassThreshold: 0.1,
 
-  // 排泄 (while alive) and 死骸 (on death) are what tie "something ate/died
-  // here" to "something can grow here again later" -- on top of the slower,
-  // animal-independent senescence trickle above (GRASS_PARAMS.senescenceRate).
+  // 排泄 (while alive) ties "ate here" to "something can grow here again
+  // later" -- on top of the slower, animal-independent senescence trickle
+  // (GRASS_PARAMS.senescenceRate). 死骸 (on death) is CARCASS_PARAMS below,
+  // shared with carnivores -- a body is a body regardless of species.
   excretionRatio: 0.5, // fraction of each bite returned to the tile as fertility
 
-  // A carcass doesn't dump its fertility instantly -- it stays visible on
-  // the tile and decomposes over carcassDecayTicks, releasing an even share
-  // of carcassFertility (much more than daily droppings) each tick. This is
-  // the "遅延" (delay) from design.md's causal loop made concrete: death pays
-  // off the next growth only after decomposition actually finishes.
-  carcassFertility: 0.4,
-  carcassDecayTicks: 10, // ~5s
-
-  // 多産多死: short-lived on purpose. At 2000 ticks (1000s) old age never
-  // actually fired, so starvation was the only source of death and a
-  // population that found even scraps of food just sat there indefinitely.
-  // At 200 ticks (100s / ~10 epochs) the herd needs constant reproduction to
-  // hold its numbers -- once food gets scarce enough that reproduction stops
-  // keeping up, aging alone thins the herd fast.
+  // 多産多死 (base of the pyramid): short-lived and quick to breed. At 2000
+  // ticks (1000s) old age never actually fired, so starvation was the only
+  // source of death and a population that found even scraps of food just
+  // sat there indefinitely. At 200 ticks (100s / ~10 epochs) the herd needs
+  // constant reproduction to hold its numbers -- once food gets scarce
+  // enough that reproduction stops keeping up, aging alone thins it fast.
   lifespanTicks: 200,
   visionRadius: 3,
+};
+
+export const CARNIVORE_PARAMS = {
+  // Apex predators are naturally far rarer than what they eat -- both the
+  // population ceiling and the starting pack are a fraction of the herd's.
+  // First pass used 500/15 and, even with a stricter repro bar than a
+  // herbivore's, the population exploded to ~390 while crashing the herd to
+  // single digits within a couple hundred ticks -- a predator population
+  // was outnumbering its prey by 40x, exactly backwards for a pyramid.
+  // Capped harder as a backstop while the repro economy below (the real
+  // fix) was tightened.
+  capacity: 150,
+  initialCount: 12,
+
+  // 少産少死, one level further up the pyramid than herbivores: slower
+  // metabolism (can go a little longer between meals), a much stricter
+  // reproduction bar, and a lifespan several times longer. If a carnivore
+  // could breed as readily as a herbivore, or a herbivore as readily as
+  // grass regrows, the pyramid ordering the game's whole premise leans on
+  // (each level scarcer and slower-turning-over than the one it eats)
+  // would just be backwards.
+  hungerGainPerTick: 0.04,
+  // A successful kill is a satisfying meal, but not enough on its own to
+  // fully satiate and immediately qualify for reproduction the way an
+  // initial 0.5 did -- that let a single catch nearly always trigger a
+  // birth, and with prey initially abundant that ran away almost as fast as
+  // the herd itself was booming.
+  predationRelief: 0.3,
+  starvationHunger: 1.0,
+  initialHunger: 0.5,
+
+  // Much stricter than a herbivore's reproHungerThreshold (0.15) and
+  // reproHungerCost (0.3) -- several consecutive good catches should be
+  // needed to earn one birth, not just one.
+  reproHungerThreshold: 0.05,
+  reproHungerCost: 0.7,
+
+  // 3x a herbivore's 200 ticks -- long-lived, the way an apex predator
+  // should be, at the cost of being fragile once its numbers do start
+  // declining (a slow-breeding population can't bounce back fast).
+  lifespanTicks: 600,
+};
+
+export const CARCASS_PARAMS = {
+  // Shared by every species -- a body decomposing where it fell is a much
+  // bigger nutrient event than daily droppings, regardless of whose body it
+  // was. It doesn't dump its fertility instantly -- it stays visible on the
+  // tile and decomposes over decayTicks, releasing an even share of
+  // fertility each tick. This is the "遅延" (delay) from design.md's causal
+  // loop made concrete: death pays off the next growth only once
+  // decomposition actually finishes.
+  fertility: 0.4,
+  decayTicks: 10, // ~5s
 };

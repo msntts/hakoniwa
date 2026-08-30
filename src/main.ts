@@ -33,15 +33,15 @@ worker.onmessage = (ev: MessageEvent<WorkerToMain>) => {
       });
       break;
     case 'init-done':
-      paintInit(renderer, msg.grass, msg.herbivores, msg.carcasses);
-      hudPop.textContent = `herbivores: ${msg.herbivores.count}`;
+      paintInit(renderer, msg.grass, msg.herbivores, msg.carnivores, msg.carcasses);
+      hudPop.textContent = `herbivores: ${msg.herbivores.count} / carnivores: ${msg.carnivores.count}`;
       worker.postMessage({ type: 'start' });
       break;
     case 'tick': {
-      const repainted = applyTick(renderer, msg.dirty, msg.herbivores, msg.carcasses);
+      const repainted = applyTick(renderer, msg.dirty, msg.herbivores, msg.carnivores, msg.carcasses);
       hudTick.textContent = `tick: ${msg.tickCount}`;
       hudDirty.textContent = `dirty: ${repainted} / ${BOARD_WIDTH * BOARD_HEIGHT}`;
-      hudPop.textContent = `herbivores: ${msg.herbivores.count}`;
+      hudPop.textContent = `herbivores: ${msg.herbivores.count} / carnivores: ${msg.carnivores.count}`;
       break;
     }
     case 'epoch':

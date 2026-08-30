@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Board } from '../src/sim/board';
 import { createCarcassState, spawnCarcass, stepCarcasses } from '../src/sim/carcass';
 import { createGrassState } from '../src/sim/grass';
-import { HERBIVORE_PARAMS } from '../src/sim/params';
+import { CARCASS_PARAMS } from '../src/sim/params';
 
 const board: Board = { width: 5, height: 5 };
 
@@ -16,9 +16,9 @@ describe('stepCarcasses', () => {
     stepCarcasses(carcasses, grass, board);
 
     const tile = 2 * board.width + 2;
-    const perTick = HERBIVORE_PARAMS.carcassFertility / HERBIVORE_PARAMS.carcassDecayTicks;
+    const perTick = CARCASS_PARAMS.fertility / CARCASS_PARAMS.decayTicks;
     expect(grass.fertility[tile]).toBeCloseTo(perTick, 5);
-    expect(grass.fertility[tile]).toBeLessThan(HERBIVORE_PARAMS.carcassFertility);
+    expect(grass.fertility[tile]).toBeLessThan(CARCASS_PARAMS.fertility);
   });
 
   it('has released the full carcassFertility and disappeared once fully decayed', () => {
@@ -27,12 +27,12 @@ describe('stepCarcasses', () => {
     const carcasses = createCarcassState(10);
     spawnCarcass(carcasses, 2, 2);
 
-    for (let i = 0; i < HERBIVORE_PARAMS.carcassDecayTicks; i++) {
+    for (let i = 0; i < CARCASS_PARAMS.decayTicks; i++) {
       stepCarcasses(carcasses, grass, board);
     }
 
     const tile = 2 * board.width + 2;
-    expect(grass.fertility[tile]).toBeCloseTo(HERBIVORE_PARAMS.carcassFertility, 5);
+    expect(grass.fertility[tile]).toBeCloseTo(CARCASS_PARAMS.fertility, 5);
     expect(carcasses.count).toBe(0);
   });
 

@@ -62,23 +62,29 @@ export function stepGrass(state: GrassState, board: Board): void {
   // grown value to a tile processed later, biasing the spread in scan order.
   const prevBiomass = state.biomass.slice();
 
-  // Pass 1: standing grass constantly sheds a little organic matter, onto
-  // its own soil (senescence -- old leaves and roots turning over) and onto
-  // its neighbors' (spread -- litter drifting, roots reaching over). Neither
+  // Pass 1: standing grass constantly turns over -- old leaves and roots
+  // die back (senescence: this tile actually loses that biomass, "grass
+  // dies too," and what dies is what feeds the soil back) and some drifts
+  // onto neighboring soil (spread: litter, roots reaching over -- a surplus
+  // that doesn't cost the source tile its own standing biomass). Neither
   // needs an animal to happen. Senescence is what keeps an ungrazed, herd-
   // free landscape from freezing wherever the herd last left it: without it,
   // fertility only ever came from excretion/carcasses, so once every animal
   // was gone there was no way for bare, nutrient-exhausted ground to ever
-  // recover on its own again. It's deliberately slow (much slower than
-  // spreadRate/excretion) so it doesn't undercut scarcity while a herd is
-  // actually grazing -- it only matters once grazing pressure eases off.
+  // recover on its own again. Both are deliberately slow (much slower than
+  // growthRate/excretion) so they don't undercut scarcity while a herd is
+  // actually grazing -- they only matter once grazing pressure eases off.
   if (spreadRate > 0 || senescenceRate > 0) {
     for (let y = 0; y < board.height; y++) {
       for (let x = 0; x < board.width; x++) {
         const i = idx(board, x, y);
         const b = prevBiomass[i] ?? 0;
         if (b <= 0) continue;
-        if (senescenceRate > 0) depositFertility(state, i, senescenceRate * b);
+        if (senescenceRate > 0) {
+          const died = senescenceRate * b;
+          state.biomass[i] = (state.biomass[i] ?? 0) - died; // this is what "grass also dies" means: real turnover, not a free top-up
+          depositFertility(state, i, died);
+        }
         if (spreadRate <= 0) continue;
         const shedPerNeighbor = (spreadRate * b) / NEIGHBOR_OFFSETS_8.length;
         for (const [dx, dy] of NEIGHBOR_OFFSETS_8) {

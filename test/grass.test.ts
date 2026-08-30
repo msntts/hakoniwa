@@ -20,7 +20,10 @@ describe('stepGrass', () => {
     state.biomass[0] = GRASS_PARAMS.capacity;
     state.fertility[0] = 10;
     stepGrass(state, board);
-    expect(state.biomass[0]).toBeCloseTo(GRASS_PARAMS.capacity, 5);
+    // Senescence nibbles even a maxed-out tile a little ("grass dies too"),
+    // so it won't sit at *exactly* capacity anymore -- just never above it.
+    expect(state.biomass[0]).toBeLessThanOrEqual(GRASS_PARAMS.capacity);
+    expect(state.biomass[0]).toBeGreaterThan(GRASS_PARAMS.capacity - 0.01);
   });
 
   it('does not grow at all without fertility, no matter how empty the tile looks', () => {
@@ -34,17 +37,17 @@ describe('stepGrass', () => {
   it('consumes fertility 1:1 with the biomass it grows', () => {
     const state = createGrassState(board);
     state.biomass[0] = 0.5;
-    state.fertility[0] = 0.01;
+    state.fertility[0] = 0.01; // less than one tick's growth potential
     const potential = GRASS_PARAMS.growthRate * (GRASS_PARAMS.capacity - 0.5);
-    // This tile's own senescence trickle also adds to its fertility this same
-    // tick (see the dedicated senescence test below) -- account for it here
-    // too so this test stays about the 1:1 consumption, not senescence.
-    const available = state.fertility[0] + GRASS_PARAMS.senescenceRate * 0.5;
-    expect(available).toBeLessThan(potential); // sanity check on the test setup itself
+    expect(state.fertility[0]).toBeLessThan(potential); // sanity check on the test setup itself
 
     stepGrass(state, board);
 
-    expect(state.biomass[0]).toBeCloseTo(0.5 + available, 5);
+    // Own senescence dies back and regrows the same tick when fertility is
+    // the limiting factor (see the dedicated senescence test below for what
+    // it looks like when growth *isn't* reabsorbing it immediately) -- net
+    // effect on biomass this tick is a wash, so this stays a clean 1:1 check.
+    expect(state.biomass[0]).toBeCloseTo(0.5 + 0.01, 5);
     expect(state.fertility[0]).toBeCloseTo(0, 5);
   });
 
@@ -52,8 +55,7 @@ describe('stepGrass', () => {
     const state = createGrassState(board);
     // Tile 0 = (0,0) has zero fertility of its own but a lush neighbor at
     // (0,1) = index 4, which sheds fertility onto it this same tick. Tile 10
-    // = (2,2) starts identically but is surrounded entirely by bare tiles, so
-    // it only has its own (much smaller) senescence trickle to grow from.
+    // = (2,2) starts identically but is surrounded entirely by bare tiles.
     state.biomass[0] = 0.1;
     state.fertility[0] = 0;
     state.biomass[4] = 0.9;
@@ -62,16 +64,15 @@ describe('stepGrass', () => {
 
     stepGrass(state, board);
 
-    const ownPotential = GRASS_PARAMS.growthRate * (GRASS_PARAMS.capacity - 0.1);
-    const ownSenescence = GRASS_PARAMS.senescenceRate * 0.1;
     const shedFromNeighbor = (GRASS_PARAMS.spreadRate * 0.9) / 8; // 7 bare neighbors + the one lush one
 
-    // Growth is still capped by whatever fertility actually arrived this tick.
-    const grownIsolated = Math.min(ownPotential, ownSenescence);
-    const grownNextToLush = Math.min(ownPotential, ownSenescence + shedFromNeighbor);
-
-    expect(state.biomass[10]).toBeCloseTo(0.1 + grownIsolated, 5);
-    expect(state.biomass[0]).toBeCloseTo(0.1 + grownNextToLush, 5);
+    // Isolated: its own senescence dies back and regrows by the same amount
+    // this same tick (fertility-limited), netting to no change. Next to a
+    // lush neighbor: that same wash, plus a genuine net gain from what the
+    // neighbor shed in -- shedding doesn't cost the *source* tile anything,
+    // unlike self-senescence.
+    expect(state.biomass[10]).toBeCloseTo(0.1, 5);
+    expect(state.biomass[0]).toBeCloseTo(0.1 + shedFromNeighbor, 5);
     expect(state.biomass[0]).toBeGreaterThan(state.biomass[10]);
   });
 
@@ -86,20 +87,21 @@ describe('stepGrass', () => {
     expect(state.biomass[0]).toBe(0);
   });
 
-  it('still slowly self-fertilizes from senescence alone, with no neighbors and no animals involved', () => {
+  it('grass also dies: standing biomass declines a little from senescence even at a standstill', () => {
     const state = createGrassState(board);
-    state.biomass[0] = 0.5;
+    // At capacity, growth potential is exactly zero, so senescence's effect
+    // isn't reabsorbed by growth in the same tick -- this isolates the "grass
+    // dies too" claim (and where the fertility it generates actually goes)
+    // from the regrowth math covered by the other tests above.
+    state.biomass[0] = GRASS_PARAMS.capacity;
     state.fertility[0] = 0;
-    // every neighbor bare -- this tile's own standing biomass is the only source
 
     stepGrass(state, board);
 
-    const ownPotential = GRASS_PARAMS.growthRate * (GRASS_PARAMS.capacity - 0.5);
-    const ownSenescence = GRASS_PARAMS.senescenceRate * 0.5;
-    const grown = Math.min(ownPotential, ownSenescence);
-
-    expect(grown).toBeGreaterThan(0); // sanity check on the test setup itself
-    expect(state.biomass[0]).toBeCloseTo(0.5 + grown, 5);
+    const died = GRASS_PARAMS.senescenceRate * GRASS_PARAMS.capacity;
+    expect(died).toBeGreaterThan(0); // sanity check on the test setup itself
+    expect(state.biomass[0]).toBeCloseTo(GRASS_PARAMS.capacity - died, 5);
+    expect(state.fertility[0]).toBeCloseTo(died, 5);
   });
 });
 

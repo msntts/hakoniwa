@@ -1,5 +1,5 @@
 import { createSimState, tick, type SimState } from '../sim/loop';
-import type { CarcassSnapshot, HerbivoreSnapshot, MainToWorker, WorkerToMain } from '../types';
+import type { CarcassSnapshot, CarnivoreSnapshot, HerbivoreSnapshot, MainToWorker, WorkerToMain } from '../types';
 
 let state: SimState | null = null;
 let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -16,6 +16,15 @@ function herdSnapshot(s: SimState): HerbivoreSnapshot {
     y: s.herd.y.slice(0, s.herd.count),
     hunger: s.herd.hunger.slice(0, s.herd.count),
     count: s.herd.count,
+  };
+}
+
+function predatorSnapshot(s: SimState): CarnivoreSnapshot {
+  return {
+    x: s.predators.x.slice(0, s.predators.count),
+    y: s.predators.y.slice(0, s.predators.count),
+    hunger: s.predators.hunger.slice(0, s.predators.count),
+    count: s.predators.count,
   };
 }
 
@@ -45,6 +54,7 @@ function startLoop(): void {
       tickCount: state.tickCount,
       dirty: result.dirty,
       herbivores: herdSnapshot(state),
+      carnivores: predatorSnapshot(state),
       carcasses: carcassSnapshot(state),
     });
     if (result.epoch !== undefined) {
@@ -69,6 +79,7 @@ self.onmessage = (ev: MessageEvent<MainToWorker>) => {
           height: state.board.height,
           grass: { biomass, height, colorBucket },
           herbivores: herdSnapshot(state),
+          carnivores: predatorSnapshot(state),
           carcasses: carcassSnapshot(state),
         },
         [biomass.buffer, height.buffer, colorBucket.buffer],

@@ -36,7 +36,7 @@ export function spawnHerbivore(h: HerbivoreState, x: number, y: number, hunger: 
   return i;
 }
 
-function removeHerbivoreAt(h: HerbivoreState, index: number): void {
+export function removeHerbivoreAt(h: HerbivoreState, index: number): void {
   const last = h.count - 1;
   if (index !== last) {
     h.x[index] = h.x[last] ?? 0;

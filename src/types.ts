@@ -15,6 +15,15 @@ export interface HerbivoreSnapshot {
   count: number;
 }
 
+// Same shape as HerbivoreSnapshot today -- kept as its own type since the two
+// species' state is conceptually distinct and may diverge later.
+export interface CarnivoreSnapshot {
+  x: Int16Array;
+  y: Int16Array;
+  hunger: Float32Array;
+  count: number;
+}
+
 export interface CarcassSnapshot {
   x: Int16Array;
   y: Int16Array;
@@ -43,6 +52,7 @@ export type WorkerToMain =
       height: number;
       grass: { biomass: Float32Array; height: Uint8Array; colorBucket: Uint8Array };
       herbivores: HerbivoreSnapshot;
+      carnivores: CarnivoreSnapshot;
       carcasses: CarcassSnapshot;
     }
   | {
@@ -50,6 +60,7 @@ export type WorkerToMain =
       tickCount: number;
       dirty: DirtyTile[];
       herbivores: HerbivoreSnapshot;
+      carnivores: CarnivoreSnapshot;
       carcasses: CarcassSnapshot;
     }
   | { type: 'epoch'; epochIndex: number };

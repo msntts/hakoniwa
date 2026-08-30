@@ -1,7 +1,7 @@
 import type { Board } from './board';
 import { idx } from './board';
 import { depositFertility, type GrassState } from './grass';
-import { HERBIVORE_PARAMS } from './params';
+import { CARCASS_PARAMS } from './params';
 
 // A dead individual doesn't just vanish -- it decomposes in place over
 // several ticks, releasing its fertility gradually rather than all at once,
@@ -45,8 +45,8 @@ function removeCarcassAt(c: CarcassState, index: number): void {
 }
 
 export function stepCarcasses(c: CarcassState, grass: GrassState, board: Board): void {
-  const { carcassFertility, carcassDecayTicks } = HERBIVORE_PARAMS;
-  const perTickRelease = carcassFertility / carcassDecayTicks;
+  const { fertility, decayTicks } = CARCASS_PARAMS;
+  const perTickRelease = fertility / decayTicks;
   const expired: number[] = [];
 
   for (let i = 0; i < c.count; i++) {
@@ -55,7 +55,7 @@ export function stepCarcasses(c: CarcassState, grass: GrassState, board: Board):
     depositFertility(grass, idx(board, x, y), perTickRelease);
     const age = (c.age[i] ?? 0) + 1;
     c.age[i] = age;
-    if (age >= carcassDecayTicks) expired.push(i);
+    if (age >= decayTicks) expired.push(i);
   }
 
   expired.sort((a, b) => b - a);
