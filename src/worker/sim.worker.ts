@@ -14,7 +14,7 @@ function herdSnapshot(s: SimState): HerbivoreSnapshot {
   return {
     x: s.herd.x.slice(0, s.herd.count),
     y: s.herd.y.slice(0, s.herd.count),
-    energy: s.herd.energy.slice(0, s.herd.count),
+    hunger: s.herd.hunger.slice(0, s.herd.count),
     count: s.herd.count,
   };
 }

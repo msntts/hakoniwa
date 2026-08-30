@@ -11,7 +11,7 @@ export const DEFAULT_EPOCH_MS = 10_000;
 export interface HerbivoreSnapshot {
   x: Int16Array;
   y: Int16Array;
-  energy: Float32Array;
+  hunger: Float32Array;
   count: number;
 }
 

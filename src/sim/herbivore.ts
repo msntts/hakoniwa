@@ -8,7 +8,8 @@ export interface HerbivoreState {
   count: number;
   x: Int16Array;
   y: Int16Array;
-  energy: Float32Array;
+  // 0 = just ate, 1 = starving. Tracks *current* feeding, independent of age.
+  hunger: Float32Array;
   age: Uint16Array;
 }
 
@@ -18,17 +19,17 @@ export function createHerbivoreState(capacity: number): HerbivoreState {
     count: 0,
     x: new Int16Array(capacity),
     y: new Int16Array(capacity),
-    energy: new Float32Array(capacity),
+    hunger: new Float32Array(capacity),
     age: new Uint16Array(capacity),
   };
 }
 
-export function spawnHerbivore(h: HerbivoreState, x: number, y: number, energy: number): number | null {
+export function spawnHerbivore(h: HerbivoreState, x: number, y: number, hunger: number): number | null {
   if (h.count >= h.capacity) return null;
   const i = h.count;
   h.x[i] = x;
   h.y[i] = y;
-  h.energy[i] = energy;
+  h.hunger[i] = hunger;
   h.age[i] = 0;
   h.count++;
   return i;
@@ -39,7 +40,7 @@ function removeHerbivoreAt(h: HerbivoreState, index: number): void {
   if (index !== last) {
     h.x[index] = h.x[last] ?? 0;
     h.y[index] = h.y[last] ?? 0;
-    h.energy[index] = h.energy[last] ?? 0;
+    h.hunger[index] = h.hunger[last] ?? 0;
     h.age[index] = h.age[last] ?? 0;
   }
   h.count--;
@@ -49,7 +50,7 @@ export function seedHerbivores(h: HerbivoreState, board: Board, count: number, r
   for (let n = 0; n < count; n++) {
     const x = Math.floor(rng() * board.width);
     const y = Math.floor(rng() * board.height);
-    spawnHerbivore(h, x, y, HERBIVORE_PARAMS.initialEnergy);
+    spawnHerbivore(h, x, y, HERBIVORE_PARAMS.initialHunger);
   }
 }
 
@@ -59,8 +60,16 @@ const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
 ];
 
 export function stepHerbivores(h: HerbivoreState, grass: GrassState, board: Board, rng: () => number): void {
-  const { metabolism, grazeGain, grazeBiomassThreshold, reproThreshold, reproCost, lifespanTicks, capacity: maxPop } =
-    HERBIVORE_PARAMS;
+  const {
+    hungerGainPerTick,
+    grazeHungerRelief,
+    starvationHunger,
+    grazeBiomassThreshold,
+    reproHungerThreshold,
+    reproHungerCost,
+    lifespanTicks,
+    capacity: maxPop,
+  } = HERBIVORE_PARAMS;
 
   const deaths: number[] = [];
   const births: Array<[number, number]> = [];
@@ -90,24 +99,29 @@ export function stepHerbivores(h: HerbivoreState, grass: GrassState, board: Boar
     h.x[i] = bestX;
     h.y[i] = bestY;
 
-    let energy = h.energy[i] ?? 0;
+    // Hunger always climbs -- there is no reserve to bank against a future
+    // famine. A bite only relieves however much of it actually landed.
+    let hunger = (h.hunger[i] ?? 0) + hungerGainPerTick;
     if ((grass.biomass[bestI] ?? 0) > grazeBiomassThreshold) {
       const eaten = grazeTile(grass, bestI, GRASS_PARAMS.grazePerBite);
-      energy += eaten * grazeGain;
+      hunger -= grazeHungerRelief * (eaten / GRASS_PARAMS.grazePerBite);
     }
-    energy -= metabolism;
+    hunger = Math.max(0, hunger);
+
     const age = (h.age[i] ?? 0) + 1;
     h.age[i] = age;
 
-    if (energy <= 0 || age > lifespanTicks) {
+    if (hunger >= starvationHunger || age > lifespanTicks) {
       deaths.push(i);
       continue;
     }
-    if (energy >= reproThreshold && h.count + births.length < maxPop) {
-      energy -= reproCost;
+    // Only a currently well-fed individual reproduces -- a large reserve
+    // banked during a past boom can't buy a birth once food is scarce again.
+    if (hunger <= reproHungerThreshold && h.count + births.length < maxPop) {
+      hunger += reproHungerCost;
       births.push([bestX, bestY]);
     }
-    h.energy[i] = energy;
+    h.hunger[i] = hunger;
   }
 
   // Apply removals highest-index-first so swap-remove doesn't disturb indices
@@ -116,6 +130,6 @@ export function stepHerbivores(h: HerbivoreState, grass: GrassState, board: Boar
   for (const i of deaths) removeHerbivoreAt(h, i);
 
   for (const [x, y] of births) {
-    spawnHerbivore(h, x, y, HERBIVORE_PARAMS.initialEnergy);
+    spawnHerbivore(h, x, y, HERBIVORE_PARAMS.initialHunger);
   }
 }
