@@ -1,5 +1,6 @@
-import type { DirtyTile, HerbivoreSnapshot } from '../types';
-import { grassSpriteRect, type SpriteSheet } from './sprites';
+import { HERBIVORE_PARAMS } from '../sim/params';
+import type { CarcassSnapshot, DirtyTile, HerbivoreSnapshot } from '../types';
+import { CARCASS_DECAYED_COLOR, CARCASS_FRESH_COLOR, drawCarcassGlyph, grassSpriteRect, lerpColor, type SpriteSheet } from './sprites';
 
 export interface RendererState {
   ctx: CanvasRenderingContext2D;
@@ -8,7 +9,10 @@ export interface RendererState {
   height: number;
   colorBucket: Uint8Array;
   heightCat: Uint8Array;
-  prevAnimalTiles: Set<number>;
+  // Tiles carrying a top-layer glyph last frame (live animal or carcass) --
+  // needed so a tile that loses its occupant gets its grass repainted to
+  // erase the stale glyph, same idea for both since they share the layer.
+  prevOverlayTiles: Set<number>;
 }
 
 export function createRenderer(
@@ -33,7 +37,7 @@ export function createRenderer(
     height,
     colorBucket: new Uint8Array(width * height),
     heightCat: new Uint8Array(width * height),
-    prevAnimalTiles: new Set(),
+    prevOverlayTiles: new Set(),
   };
 }
 
@@ -54,14 +58,18 @@ function paintGrassTile(r: RendererState, i: number): void {
   );
 }
 
-function animalTileSet(r: RendererState, herbivores: HerbivoreSnapshot): Set<number> {
-  const tiles = new Set<number>();
-  for (let k = 0; k < herbivores.count; k++) {
-    const x = herbivores.x[k] ?? 0;
-    const y = herbivores.y[k] ?? 0;
-    tiles.add(y * r.width + x);
+// Live animals take priority over a carcass on the same tile (design.md:
+// animals are always the top layer), so carcasses are drawn first and
+// animals painted over them.
+function drawCarcasses(r: RendererState, carcasses: CarcassSnapshot): void {
+  const decayTicks = HERBIVORE_PARAMS.carcassDecayTicks;
+  for (let k = 0; k < carcasses.count; k++) {
+    const x = carcasses.x[k] ?? 0;
+    const y = carcasses.y[k] ?? 0;
+    const t = Math.min(1, (carcasses.age[k] ?? 0) / decayTicks);
+    const color = lerpColor(CARCASS_FRESH_COLOR, CARCASS_DECAYED_COLOR, t);
+    drawCarcassGlyph(r.ctx, r.sheet.tileSize, x, y, color);
   }
-  return tiles;
 }
 
 function drawAnimalSprites(r: RendererState, herbivores: HerbivoreSnapshot): void {
@@ -72,38 +80,57 @@ function drawAnimalSprites(r: RendererState, herbivores: HerbivoreSnapshot): voi
   }
 }
 
+function overlayTileSet(r: RendererState, herbivores: HerbivoreSnapshot, carcasses: CarcassSnapshot): Set<number> {
+  const tiles = new Set<number>();
+  for (let k = 0; k < herbivores.count; k++) {
+    tiles.add((herbivores.y[k] ?? 0) * r.width + (herbivores.x[k] ?? 0));
+  }
+  for (let k = 0; k < carcasses.count; k++) {
+    tiles.add((carcasses.y[k] ?? 0) * r.width + (carcasses.x[k] ?? 0));
+  }
+  return tiles;
+}
+
 export function paintInit(
   r: RendererState,
   grass: { biomass: Float32Array; height: Uint8Array; colorBucket: Uint8Array },
   herbivores: HerbivoreSnapshot,
+  carcasses: CarcassSnapshot,
 ): void {
   r.colorBucket.set(grass.colorBucket);
   r.heightCat.set(grass.height);
   const n = r.width * r.height;
   for (let i = 0; i < n; i++) paintGrassTile(r, i);
+  drawCarcasses(r, carcasses);
   drawAnimalSprites(r, herbivores);
-  r.prevAnimalTiles = animalTileSet(r, herbivores);
+  r.prevOverlayTiles = overlayTileSet(r, herbivores, carcasses);
 }
 
-export function applyTick(r: RendererState, dirty: DirtyTile[], herbivores: HerbivoreSnapshot): number {
+export function applyTick(
+  r: RendererState,
+  dirty: DirtyTile[],
+  herbivores: HerbivoreSnapshot,
+  carcasses: CarcassSnapshot,
+): number {
   for (const d of dirty) {
     r.colorBucket[d.i] = d.color;
     r.heightCat[d.i] = d.height;
   }
 
-  const currAnimalTiles = animalTileSet(r, herbivores);
+  const currOverlayTiles = overlayTileSet(r, herbivores, carcasses);
 
   // Repaint every tile whose grass changed, plus every tile that had (or now
-  // has) an animal on it -- otherwise a moved-off animal leaves a ghost glyph
-  // behind on a tile whose grass color/height didn't itself change this tick.
+  // has) an animal/carcass on it -- otherwise a vacated tile leaves a ghost
+  // glyph behind on grass whose color/height didn't itself change this tick.
   const repaint = new Set<number>();
   for (const d of dirty) repaint.add(d.i);
-  for (const i of r.prevAnimalTiles) repaint.add(i);
-  for (const i of currAnimalTiles) repaint.add(i);
+  for (const i of r.prevOverlayTiles) repaint.add(i);
+  for (const i of currOverlayTiles) repaint.add(i);
 
   for (const i of repaint) paintGrassTile(r, i);
+  drawCarcasses(r, carcasses);
   drawAnimalSprites(r, herbivores);
 
-  r.prevAnimalTiles = currAnimalTiles;
+  r.prevOverlayTiles = currOverlayTiles;
   return repaint.size;
 }

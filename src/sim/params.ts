@@ -10,6 +10,11 @@ export const GRASS_PARAMS = {
   // the tile looks. Replenished only through the herbivore/decomposer cycle
   // (see HERBIVORE_PARAMS.excretionRatio / carcassFertility below).
   fertilityCap: 1.0,
+  // A patch thickens outward: existing biomass on a neighboring tile adds to
+  // this tile's growth potential, on top of what its own biomass/capacity
+  // gap alone would produce. Still hard-capped by this tile's own fertility,
+  // so it can't spread onto soil with nothing to grow from.
+  spreadRate: 0.05,
 };
 
 export const HERBIVORE_PARAMS = {
@@ -48,7 +53,14 @@ export const HERBIVORE_PARAMS = {
   // "something can grow here again later," instead of grass regenerating on
   // its own regardless of what happened on that tile.
   excretionRatio: 0.5, // fraction of each bite returned to the tile as fertility
-  carcassFertility: 0.4, // a body decomposing is a much bigger nutrient event than daily droppings
+
+  // A carcass doesn't dump its fertility instantly -- it stays visible on
+  // the tile and decomposes over carcassDecayTicks, releasing an even share
+  // of carcassFertility (much more than daily droppings) each tick. This is
+  // the "遅延" (delay) from design.md's causal loop made concrete: death pays
+  // off the next growth only after decomposition actually finishes.
+  carcassFertility: 0.4,
+  carcassDecayTicks: 10, // ~5s
 
   // 多産多死: short-lived on purpose. At 2000 ticks (1000s) old age never
   // actually fired, so starvation was the only source of death and a

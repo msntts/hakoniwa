@@ -1,4 +1,5 @@
 import type { Board } from './board';
+import { idx, NEIGHBOR_OFFSETS_8, wrap } from './board';
 import type { DirtyTile } from '../types';
 import { GRASS_PARAMS } from './params';
 
@@ -55,17 +56,38 @@ export function depositFertility(state: GrassState, i: number, amount: number): 
 }
 
 export function stepGrass(state: GrassState, board: Board): void {
-  const n = board.width * board.height;
-  const { growthRate, capacity } = GRASS_PARAMS;
-  for (let i = 0; i < n; i++) {
-    const b = state.biomass[i] ?? 0;
-    const potential = growthRate * (capacity - b);
-    if (potential <= 0) continue;
-    const available = state.fertility[i] ?? 0;
-    const used = Math.min(potential, available);
-    if (used <= 0) continue;
-    state.biomass[i] = b + used;
-    state.fertility[i] = available - used;
+  const { growthRate, capacity, spreadRate } = GRASS_PARAMS;
+  // Snapshot so every tile reads the *same* pre-tick neighbor biomass --
+  // otherwise a tile processed early in the loop would already show its
+  // grown value to a tile processed later, biasing the spread in scan order.
+  const prevBiomass = state.biomass.slice();
+
+  for (let y = 0; y < board.height; y++) {
+    for (let x = 0; x < board.width; x++) {
+      const i = idx(board, x, y);
+      const b = prevBiomass[i] ?? 0;
+      const ownPotential = growthRate * (capacity - b);
+      if (ownPotential <= 0) continue;
+
+      // Existing grass on a neighboring tile helps a patch thicken outward,
+      // on top of what the tile's own condition alone would grow -- but
+      // still capped by this tile's own fertility below, so it can't spread
+      // onto soil with nothing to grow from.
+      let neighborSum = 0;
+      for (const [dx, dy] of NEIGHBOR_OFFSETS_8) {
+        const nx = wrap(x + dx, board.width);
+        const ny = wrap(y + dy, board.height);
+        neighborSum += prevBiomass[idx(board, nx, ny)] ?? 0;
+      }
+      const neighborAvg = neighborSum / NEIGHBOR_OFFSETS_8.length;
+      const potential = ownPotential + spreadRate * neighborAvg;
+
+      const available = state.fertility[i] ?? 0;
+      const used = Math.min(potential, available);
+      if (used <= 0) continue;
+      state.biomass[i] = b + used;
+      state.fertility[i] = available - used;
+    }
   }
 }
 

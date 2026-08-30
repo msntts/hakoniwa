@@ -1,4 +1,5 @@
 import type { Board } from './board';
+import { createCarcassState, stepCarcasses, type CarcassState } from './carcass';
 import { createGrassState, deriveHeightAndColor, seedGrass, stepGrass, type GrassState } from './grass';
 import { createHerbivoreState, seedHerbivores, stepHerbivores, type HerbivoreState } from './herbivore';
 import { HERBIVORE_PARAMS } from './params';
@@ -8,6 +9,7 @@ export interface SimState {
   board: Board;
   grass: GrassState;
   herd: HerbivoreState;
+  carcasses: CarcassState;
   tickCount: number;
   msSinceEpochStart: number;
   epochCount: number;
@@ -46,10 +48,15 @@ export function createSimState(
   const herd = createHerbivoreState(HERBIVORE_PARAMS.capacity);
   seedHerbivores(herd, board, HERBIVORE_PARAMS.initialCount, rng);
 
+  // Capacity matches the herd's, since a die-off could in principle drop the
+  // whole population as carcasses at once.
+  const carcasses = createCarcassState(HERBIVORE_PARAMS.capacity);
+
   return {
     board,
     grass,
     herd,
+    carcasses,
     tickCount: 0,
     msSinceEpochStart: 0,
     epochCount: 0,
@@ -66,7 +73,8 @@ export interface TickResult {
 
 export function tick(state: SimState): TickResult {
   stepGrass(state.grass, state.board);
-  stepHerbivores(state.herd, state.grass, state.board, state.rng);
+  stepHerbivores(state.herd, state.grass, state.carcasses, state.board, state.rng);
+  stepCarcasses(state.carcasses, state.grass, state.board);
   const dirty = deriveHeightAndColor(state.grass, state.board);
 
   state.tickCount++;

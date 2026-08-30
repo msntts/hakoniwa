@@ -12,13 +12,19 @@ function lerp(a: number, b: number, t: number): number {
   return Math.round(a + (b - a) * t);
 }
 
+export function lerpColor(a: readonly [number, number, number], b: readonly [number, number, number], t: number): string {
+  return `rgb(${lerp(a[0], b[0], t)},${lerp(a[1], b[1], t)},${lerp(a[2], b[2], t)})`;
+}
+
 function bucketColor(bucket: number): string {
   const t = COLOR_BUCKETS <= 1 ? 0 : bucket / (COLOR_BUCKETS - 1);
-  const r = lerp(SOIL_COLOR[0], LUSH_COLOR[0], t);
-  const g = lerp(SOIL_COLOR[1], LUSH_COLOR[1], t);
-  const b = lerp(SOIL_COLOR[2], LUSH_COLOR[2], t);
-  return `rgb(${r},${g},${b})`;
+  return lerpColor(SOIL_COLOR, LUSH_COLOR, t);
 }
+
+// A carcass starts a fresh, visceral red and fades toward the same dull soil
+// tone grass grows from -- the color drains out of it as it decomposes.
+export const CARCASS_FRESH_COLOR: readonly [number, number, number] = [0xb2, 0x3a, 0x3a];
+export const CARCASS_DECAYED_COLOR: readonly [number, number, number] = SOIL_COLOR;
 
 export interface SpriteSheet {
   tileSize: number;
@@ -64,6 +70,18 @@ export function bakeSprites(tileSize: number = TILE_SIZE): SpriteSheet {
   actx.fill();
 
   return { tileSize, grassCanvas, animalCanvas, grassCols: heights, grassRows: COLOR_BUCKETS };
+}
+
+// Carcasses fade continuously rather than stepping through a handful of
+// baked buckets, so (unlike grass/animal glyphs) they're drawn on demand
+// each frame instead of blitted from a pre-baked sheet. Carcass counts are
+// small even during a mass die-off, so per-frame fillText is cheap here.
+export function drawCarcassGlyph(ctx: CanvasRenderingContext2D, tileSize: number, x: number, y: number, color: string): void {
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `bold ${Math.floor(tileSize * 0.85)}px monospace`;
+  ctx.fillStyle = color;
+  ctx.fillText('x', x * tileSize + tileSize / 2, y * tileSize + tileSize / 2 + 1, tileSize);
 }
 
 export function grassSpriteRect(sheet: SpriteSheet, colorBucket: number, height: number) {

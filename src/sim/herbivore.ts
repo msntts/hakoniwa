@@ -1,5 +1,6 @@
 import type { Board } from './board';
-import { idx, wrap } from './board';
+import { idx, NEIGHBOR_OFFSETS_8, wrap } from './board';
+import { spawnCarcass, type CarcassState } from './carcass';
 import { depositFertility, grazeTile, type GrassState } from './grass';
 import { GRASS_PARAMS, HERBIVORE_PARAMS } from './params';
 
@@ -54,12 +55,13 @@ export function seedHerbivores(h: HerbivoreState, board: Board, count: number, r
   }
 }
 
-const NEIGHBOR_OFFSETS: ReadonlyArray<readonly [number, number]> = [
-  [0, -1], [0, 1], [-1, 0], [1, 0],
-  [-1, -1], [1, -1], [-1, 1], [1, 1],
-];
-
-export function stepHerbivores(h: HerbivoreState, grass: GrassState, board: Board, rng: () => number): void {
+export function stepHerbivores(
+  h: HerbivoreState,
+  grass: GrassState,
+  carcasses: CarcassState,
+  board: Board,
+  rng: () => number,
+): void {
   const {
     hungerGainPerTick,
     grazeHungerRelief,
@@ -68,7 +70,6 @@ export function stepHerbivores(h: HerbivoreState, grass: GrassState, board: Boar
     reproHungerThreshold,
     reproHungerCost,
     excretionRatio,
-    carcassFertility,
     lifespanTicks,
     capacity: maxPop,
   } = HERBIVORE_PARAMS;
@@ -86,7 +87,7 @@ export function stepHerbivores(h: HerbivoreState, grass: GrassState, board: Boar
     let bestBiomass = grass.biomass[bestI] ?? 0;
     let bestX = x;
     let bestY = y;
-    for (const [dx, dy] of NEIGHBOR_OFFSETS) {
+    for (const [dx, dy] of NEIGHBOR_OFFSETS_8) {
       const nx = wrap(x + dx, board.width);
       const ny = wrap(y + dy, board.height);
       const ni = idx(board, nx, ny);
@@ -117,10 +118,9 @@ export function stepHerbivores(h: HerbivoreState, grass: GrassState, board: Boar
     h.age[i] = age;
 
     if (hunger >= starvationHunger || age > lifespanTicks) {
-      // 死骸: a body decomposing where it fell is a much bigger nutrient
-      // event than daily droppings -- this is what "something dying feeds
-      // the next growth" actually means mechanically.
-      depositFertility(grass, bestI, carcassFertility);
+      // 死骸: stays put and visible, releasing fertility gradually as it
+      // decomposes (see stepCarcasses) instead of dumping it all at once.
+      spawnCarcass(carcasses, bestX, bestY);
       deaths.push(i);
       continue;
     }

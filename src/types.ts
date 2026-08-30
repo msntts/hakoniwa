@@ -15,6 +15,13 @@ export interface HerbivoreSnapshot {
   count: number;
 }
 
+export interface CarcassSnapshot {
+  x: Int16Array;
+  y: Int16Array;
+  age: Uint16Array;
+  count: number;
+}
+
 export interface DirtyTile {
   i: number;
   color: number;
@@ -36,11 +43,13 @@ export type WorkerToMain =
       height: number;
       grass: { biomass: Float32Array; height: Uint8Array; colorBucket: Uint8Array };
       herbivores: HerbivoreSnapshot;
+      carcasses: CarcassSnapshot;
     }
   | {
       type: 'tick';
       tickCount: number;
       dirty: DirtyTile[];
       herbivores: HerbivoreSnapshot;
+      carcasses: CarcassSnapshot;
     }
   | { type: 'epoch'; epochIndex: number };

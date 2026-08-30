@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Board } from '../src/sim/board';
+import { createCarcassState } from '../src/sim/carcass';
 import { createGrassState } from '../src/sim/grass';
 import { createHerbivoreState, spawnHerbivore, stepHerbivores } from '../src/sim/herbivore';
 import { GRASS_PARAMS, HERBIVORE_PARAMS } from '../src/sim/params';
@@ -12,11 +13,12 @@ describe('stepHerbivores', () => {
     const grass = createGrassState(board);
     grass.biomass.fill(0); // no food anywhere, so hunger only ever climbs
     const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
     // Already at the starvation line; plenty of lifespan left.
     spawnHerbivore(herd, 2, 2, HERBIVORE_PARAMS.starvationHunger);
 
     expect(herd.count).toBe(1);
-    stepHerbivores(herd, grass, board, noRandom);
+    stepHerbivores(herd, grass, carcasses, board, noRandom);
     expect(herd.count).toBe(0);
   });
 
@@ -24,10 +26,11 @@ describe('stepHerbivores', () => {
     const grass = createGrassState(board);
     grass.biomass.fill(1); // plenty of food so hunger never drives death
     const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
     spawnHerbivore(herd, 2, 2, 0);
     herd.age[0] = HERBIVORE_PARAMS.lifespanTicks; // one tick away from exceeding lifespan
 
-    stepHerbivores(herd, grass, board, noRandom);
+    stepHerbivores(herd, grass, carcasses, board, noRandom);
     expect(herd.count).toBe(0);
   });
 
@@ -35,10 +38,11 @@ describe('stepHerbivores', () => {
     const grass = createGrassState(board);
     grass.biomass.fill(1);
     const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
     const startHunger = 0.5;
     spawnHerbivore(herd, 2, 2, startHunger);
 
-    stepHerbivores(herd, grass, board, noRandom);
+    stepHerbivores(herd, grass, carcasses, board, noRandom);
 
     expect(herd.count).toBe(1);
     const expectedHunger =
@@ -50,11 +54,12 @@ describe('stepHerbivores', () => {
     const grass = createGrassState(board);
     grass.biomass.fill(1);
     const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
     // Already at the reproduction threshold before this tick's feeding, so
     // it stays well under the threshold afterward too.
     spawnHerbivore(herd, 2, 2, HERBIVORE_PARAMS.reproHungerThreshold);
 
-    stepHerbivores(herd, grass, board, noRandom);
+    stepHerbivores(herd, grass, carcasses, board, noRandom);
 
     expect(herd.count).toBe(2);
     // Grass is abundant, so the bite is a full one and relief == grazeHungerRelief;
@@ -72,11 +77,12 @@ describe('stepHerbivores', () => {
     const grass = createGrassState(board);
     grass.biomass.fill(1);
     const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
     // Well above the reproduction threshold and the graze relief this tick
     // isn't enough to bring it back under -- should feed but not reproduce.
     spawnHerbivore(herd, 2, 2, HERBIVORE_PARAMS.reproHungerThreshold + 0.5);
 
-    stepHerbivores(herd, grass, board, noRandom);
+    stepHerbivores(herd, grass, carcasses, board, noRandom);
 
     expect(herd.count).toBe(1);
   });
@@ -86,26 +92,34 @@ describe('stepHerbivores', () => {
     grass.biomass.fill(1);
     grass.fertility.fill(0);
     const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
     spawnHerbivore(herd, 2, 2, 0.5);
 
-    stepHerbivores(herd, grass, board, noRandom);
+    stepHerbivores(herd, grass, carcasses, board, noRandom);
 
     const tile = 2 * board.width + 2;
     const expectedFertility = GRASS_PARAMS.grazePerBite * HERBIVORE_PARAMS.excretionRatio;
     expect(grass.fertility[tile]).toBeCloseTo(expectedFertility, 5);
   });
 
-  it('deposits a carcass worth of fertility on the tile where it starves', () => {
+  it('leaves a carcass where it starves, instead of dumping fertility immediately', () => {
     const grass = createGrassState(board);
     grass.biomass.fill(0); // no food, so it starves this tick
     grass.fertility.fill(0);
     const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
     spawnHerbivore(herd, 2, 2, HERBIVORE_PARAMS.starvationHunger);
 
-    stepHerbivores(herd, grass, board, noRandom);
+    stepHerbivores(herd, grass, carcasses, board, noRandom);
 
     expect(herd.count).toBe(0);
+    expect(carcasses.count).toBe(1);
+    expect(carcasses.x[0]).toBe(2);
+    expect(carcasses.y[0]).toBe(2);
+    expect(carcasses.age[0]).toBe(0);
+    // The nutrient payoff comes later, via stepCarcasses decomposing it --
+    // not as an instant dump the moment it dies.
     const tile = 2 * board.width + 2;
-    expect(grass.fertility[tile]).toBeCloseTo(HERBIVORE_PARAMS.carcassFertility, 5);
+    expect(grass.fertility[tile]).toBe(0);
   });
 });
