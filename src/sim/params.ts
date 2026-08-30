@@ -16,6 +16,12 @@ export const HERBIVORE_PARAMS = {
   reproThreshold: 0.8,
   reproCost: 0.4,
   initialEnergy: 0.5,
-  lifespanTicks: 2000,
+  // 多産多死: short-lived on purpose. At 2000 ticks (1000s) old age never
+  // actually fired, so starvation was the only source of death and a
+  // population that found even scraps of food just sat there indefinitely.
+  // At 200 ticks (100s / ~10 epochs) the herd needs constant reproduction to
+  // hold its numbers -- once food gets scarce enough that reproduction stops
+  // keeping up, aging alone thins the herd fast.
+  lifespanTicks: 200,
   visionRadius: 3,
 };
