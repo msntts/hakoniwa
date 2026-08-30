@@ -44,32 +44,34 @@ describe('stepGrass', () => {
     expect(state.fertility[0]).toBeCloseTo(0, 5);
   });
 
-  it('grows faster next to an already-lush neighbor than in isolation, fertility allowing', () => {
+  it('recovers fertility -- and so can grow -- next to an already-lush neighbor, unlike in isolation', () => {
     const state = createGrassState(board);
-    state.fertility.fill(1); // plenty everywhere -- isolate the spread effect from the fertility cap
-    // Tile 0 = (0,0) has a lush neighbor at (0,1) = index 4. Tile 10 = (2,2)
-    // is surrounded entirely by bare tiles.
+    // Tile 0 = (0,0) has zero fertility of its own but a lush neighbor at
+    // (0,1) = index 4, which sheds fertility onto it this same tick. Tile 10
+    // = (2,2) starts identically but is surrounded entirely by bare tiles.
     state.biomass[0] = 0.1;
+    state.fertility[0] = 0;
     state.biomass[4] = 0.9;
     state.biomass[10] = 0.1;
+    state.fertility[10] = 0;
 
     stepGrass(state, board);
 
+    const shedFromNeighbor = (GRASS_PARAMS.spreadRate * 0.9) / 8; // 7 bare neighbors + the one lush one
     const ownPotential = GRASS_PARAMS.growthRate * (GRASS_PARAMS.capacity - 0.1);
-    const neighborAvg = 0.9 / 8; // 7 bare neighbors + the one lush one
-    const expectedIsolated = 0.1 + ownPotential;
-    const expectedNextToLush = 0.1 + ownPotential + GRASS_PARAMS.spreadRate * neighborAvg;
+    // Growth is still capped by available fertility -- here, exactly what was shed in.
+    const grown = Math.min(ownPotential, shedFromNeighbor);
 
-    expect(state.biomass[10]).toBeCloseTo(expectedIsolated, 5);
-    expect(state.biomass[0]).toBeCloseTo(expectedNextToLush, 5);
+    expect(state.biomass[10]).toBeCloseTo(0.1, 5); // no fertility, no lush neighbors -- unchanged
+    expect(state.biomass[0]).toBeCloseTo(0.1 + grown, 5);
     expect(state.biomass[0]).toBeGreaterThan(state.biomass[10]);
   });
 
-  it('cannot spread onto a tile with no fertility, no matter how lush its neighbors are', () => {
+  it('does not grow when it has neither its own fertility nor any lush neighbors', () => {
     const state = createGrassState(board);
     state.biomass[0] = 0;
     state.fertility[0] = 0;
-    for (const n of [1, 4, 5]) state.biomass[n] = 1; // several lush neighbors of tile 0
+    // every neighbor also bare
 
     stepGrass(state, board);
 

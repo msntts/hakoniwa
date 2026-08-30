@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Board } from '../src/sim/board';
-import { createCarcassState } from '../src/sim/carcass';
+import { createCarcassState, spawnCarcass } from '../src/sim/carcass';
 import { createGrassState } from '../src/sim/grass';
 import { createHerbivoreState, spawnHerbivore, stepHerbivores } from '../src/sim/herbivore';
 import { GRASS_PARAMS, HERBIVORE_PARAMS } from '../src/sim/params';
@@ -121,5 +121,20 @@ describe('stepHerbivores', () => {
     // not as an instant dump the moment it dies.
     const tile = 2 * board.width + 2;
     expect(grass.fertility[tile]).toBe(0);
+  });
+
+  it('refuses to move onto a tile occupied by a carcass, even if it has the best food', () => {
+    const grass = createGrassState(board);
+    grass.biomass.fill(0);
+    grass.biomass[2 * board.width + 3] = 1; // (3,2), one tile east of (2,2) -- by far the best food around
+    const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
+    spawnCarcass(carcasses, 3, 2); // a carcass is occupying that same tile
+    spawnHerbivore(herd, 2, 2, 0.5);
+
+    stepHerbivores(herd, grass, carcasses, board, noRandom);
+
+    expect(herd.x[0]).toBe(2);
+    expect(herd.y[0]).toBe(2);
   });
 });

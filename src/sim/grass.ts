@@ -62,32 +62,38 @@ export function stepGrass(state: GrassState, board: Board): void {
   // grown value to a tile processed later, biasing the spread in scan order.
   const prevBiomass = state.biomass.slice();
 
-  for (let y = 0; y < board.height; y++) {
-    for (let x = 0; x < board.width; x++) {
-      const i = idx(board, x, y);
-      const b = prevBiomass[i] ?? 0;
-      const ownPotential = growthRate * (capacity - b);
-      if (ownPotential <= 0) continue;
-
-      // Existing grass on a neighboring tile helps a patch thicken outward,
-      // on top of what the tile's own condition alone would grow -- but
-      // still capped by this tile's own fertility below, so it can't spread
-      // onto soil with nothing to grow from.
-      let neighborSum = 0;
-      for (const [dx, dy] of NEIGHBOR_OFFSETS_8) {
-        const nx = wrap(x + dx, board.width);
-        const ny = wrap(y + dy, board.height);
-        neighborSum += prevBiomass[idx(board, nx, ny)] ?? 0;
+  // Pass 1: a patch of grass constantly sheds a little organic matter onto
+  // its neighbors (leaf litter, roots reaching over) regardless of whether
+  // *it* grows this tick. This is what actually lets a thickly-grazed bare
+  // tile next to a lush one recover fertility on its own -- boosting growth
+  // *potential* alone (the previous approach) did nothing when the limiting
+  // factor was fertility, which it almost always was.
+  if (spreadRate > 0) {
+    for (let y = 0; y < board.height; y++) {
+      for (let x = 0; x < board.width; x++) {
+        const i = idx(board, x, y);
+        const b = prevBiomass[i] ?? 0;
+        if (b <= 0) continue;
+        const shedPerNeighbor = (spreadRate * b) / NEIGHBOR_OFFSETS_8.length;
+        for (const [dx, dy] of NEIGHBOR_OFFSETS_8) {
+          const nx = wrap(x + dx, board.width);
+          const ny = wrap(y + dy, board.height);
+          depositFertility(state, idx(board, nx, ny), shedPerNeighbor);
+        }
       }
-      const neighborAvg = neighborSum / NEIGHBOR_OFFSETS_8.length;
-      const potential = ownPotential + spreadRate * neighborAvg;
-
-      const available = state.fertility[i] ?? 0;
-      const used = Math.min(potential, available);
-      if (used <= 0) continue;
-      state.biomass[i] = b + used;
-      state.fertility[i] = available - used;
     }
+  }
+
+  // Pass 2: ordinary fertility-gated growth.
+  for (let i = 0; i < board.width * board.height; i++) {
+    const b = state.biomass[i] ?? 0;
+    const potential = growthRate * (capacity - b);
+    if (potential <= 0) continue;
+    const available = state.fertility[i] ?? 0;
+    const used = Math.min(potential, available);
+    if (used <= 0) continue;
+    state.biomass[i] = b + used;
+    state.fertility[i] = available - used;
   }
 }
 

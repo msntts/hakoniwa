@@ -10,10 +10,13 @@ export const GRASS_PARAMS = {
   // the tile looks. Replenished only through the herbivore/decomposer cycle
   // (see HERBIVORE_PARAMS.excretionRatio / carcassFertility below).
   fertilityCap: 1.0,
-  // A patch thickens outward: existing biomass on a neighboring tile adds to
-  // this tile's growth potential, on top of what its own biomass/capacity
-  // gap alone would produce. Still hard-capped by this tile's own fertility,
-  // so it can't spread onto soil with nothing to grow from.
+  // Fraction of a tile's own biomass it sheds onto the soil of its 8
+  // neighbors each tick (split evenly), as fertility. This is what lets a
+  // grazed-bare tile next to a lush patch recover on its own and eventually
+  // start growing again -- a patch visibly thickens outward. At 0.05 a
+  // biomass-0.8 patch sheds ~0.005 fertility/tick to each neighbor, crossing
+  // the grazeBiomassThreshold-equivalent within a few ticks of standing next
+  // to it.
   spreadRate: 0.05,
 };
 

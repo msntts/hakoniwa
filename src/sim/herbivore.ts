@@ -77,6 +77,14 @@ export function stepHerbivores(
   const deaths: number[] = [];
   const births: Array<[number, number]> = [];
 
+  // While it's decomposing, a carcass occupies its tile exclusively -- a
+  // grass-eater can't move onto it (a scavenger species could, once one
+  // exists; there isn't one yet, so for now this just blocks everyone).
+  const carcassTiles = new Set<number>();
+  for (let k = 0; k < carcasses.count; k++) {
+    carcassTiles.add(idx(board, carcasses.x[k] ?? 0, carcasses.y[k] ?? 0));
+  }
+
   for (let i = 0; i < h.count; i++) {
     const x = h.x[i] ?? 0;
     const y = h.y[i] ?? 0;
@@ -91,6 +99,7 @@ export function stepHerbivores(
       const nx = wrap(x + dx, board.width);
       const ny = wrap(y + dy, board.height);
       const ni = idx(board, nx, ny);
+      if (carcassTiles.has(ni)) continue;
       const nb = (grass.biomass[ni] ?? 0) + rng() * 0.001;
       if (nb > bestBiomass) {
         bestBiomass = nb;
