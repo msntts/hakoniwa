@@ -18,6 +18,14 @@ export const GRASS_PARAMS = {
   // the grazeBiomassThreshold-equivalent within a few ticks of standing next
   // to it.
   spreadRate: 0.05,
+  // Fraction of a tile's own biomass it returns to its *own* soil each tick,
+  // regardless of grazing -- old leaves and roots turning over. Deliberately
+  // much slower than spreadRate/excretion: while a herd is actually grazing,
+  // scarcity should still bite. This only matters once grazing pressure eases
+  // (or the herd goes extinct) -- otherwise fertility only ever came from
+  // animals, so an animal-free landscape had no way to recover and just
+  // stayed frozen wherever the herd left it.
+  senescenceRate: 0.01,
 };
 
 export const HERBIVORE_PARAMS = {
@@ -51,10 +59,9 @@ export const HERBIVORE_PARAMS = {
 
   grazeBiomassThreshold: 0.1,
 
-  // 排泄 (while alive) and 死骸 (on death) are the only two ways fertility
-  // gets back into the soil -- this is what actually ties "ate here" to
-  // "something can grow here again later," instead of grass regenerating on
-  // its own regardless of what happened on that tile.
+  // 排泄 (while alive) and 死骸 (on death) are what tie "something ate/died
+  // here" to "something can grow here again later" -- on top of the slower,
+  // animal-independent senescence trickle above (GRASS_PARAMS.senescenceRate).
   excretionRatio: 0.5, // fraction of each bite returned to the tile as fertility
 
   // A carcass doesn't dump its fertility instantly -- it stays visible on

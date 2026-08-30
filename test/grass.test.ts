@@ -34,21 +34,26 @@ describe('stepGrass', () => {
   it('consumes fertility 1:1 with the biomass it grows', () => {
     const state = createGrassState(board);
     state.biomass[0] = 0.5;
-    state.fertility[0] = 0.01; // less than one tick's growth potential
+    state.fertility[0] = 0.01;
     const potential = GRASS_PARAMS.growthRate * (GRASS_PARAMS.capacity - 0.5);
-    expect(state.fertility[0]).toBeLessThan(potential); // sanity check on the test setup itself
+    // This tile's own senescence trickle also adds to its fertility this same
+    // tick (see the dedicated senescence test below) -- account for it here
+    // too so this test stays about the 1:1 consumption, not senescence.
+    const available = state.fertility[0] + GRASS_PARAMS.senescenceRate * 0.5;
+    expect(available).toBeLessThan(potential); // sanity check on the test setup itself
 
     stepGrass(state, board);
 
-    expect(state.biomass[0]).toBeCloseTo(0.5 + 0.01, 5);
+    expect(state.biomass[0]).toBeCloseTo(0.5 + available, 5);
     expect(state.fertility[0]).toBeCloseTo(0, 5);
   });
 
-  it('recovers fertility -- and so can grow -- next to an already-lush neighbor, unlike in isolation', () => {
+  it('recovers fertility faster -- and so grows faster -- next to an already-lush neighbor than in isolation', () => {
     const state = createGrassState(board);
     // Tile 0 = (0,0) has zero fertility of its own but a lush neighbor at
     // (0,1) = index 4, which sheds fertility onto it this same tick. Tile 10
-    // = (2,2) starts identically but is surrounded entirely by bare tiles.
+    // = (2,2) starts identically but is surrounded entirely by bare tiles, so
+    // it only has its own (much smaller) senescence trickle to grow from.
     state.biomass[0] = 0.1;
     state.fertility[0] = 0;
     state.biomass[4] = 0.9;
@@ -57,17 +62,20 @@ describe('stepGrass', () => {
 
     stepGrass(state, board);
 
-    const shedFromNeighbor = (GRASS_PARAMS.spreadRate * 0.9) / 8; // 7 bare neighbors + the one lush one
     const ownPotential = GRASS_PARAMS.growthRate * (GRASS_PARAMS.capacity - 0.1);
-    // Growth is still capped by available fertility -- here, exactly what was shed in.
-    const grown = Math.min(ownPotential, shedFromNeighbor);
+    const ownSenescence = GRASS_PARAMS.senescenceRate * 0.1;
+    const shedFromNeighbor = (GRASS_PARAMS.spreadRate * 0.9) / 8; // 7 bare neighbors + the one lush one
 
-    expect(state.biomass[10]).toBeCloseTo(0.1, 5); // no fertility, no lush neighbors -- unchanged
-    expect(state.biomass[0]).toBeCloseTo(0.1 + grown, 5);
+    // Growth is still capped by whatever fertility actually arrived this tick.
+    const grownIsolated = Math.min(ownPotential, ownSenescence);
+    const grownNextToLush = Math.min(ownPotential, ownSenescence + shedFromNeighbor);
+
+    expect(state.biomass[10]).toBeCloseTo(0.1 + grownIsolated, 5);
+    expect(state.biomass[0]).toBeCloseTo(0.1 + grownNextToLush, 5);
     expect(state.biomass[0]).toBeGreaterThan(state.biomass[10]);
   });
 
-  it('does not grow when it has neither its own fertility nor any lush neighbors', () => {
+  it('does not grow when it has no biomass of its own and no lush neighbors (nothing to decompose)', () => {
     const state = createGrassState(board);
     state.biomass[0] = 0;
     state.fertility[0] = 0;
@@ -76,6 +84,22 @@ describe('stepGrass', () => {
     stepGrass(state, board);
 
     expect(state.biomass[0]).toBe(0);
+  });
+
+  it('still slowly self-fertilizes from senescence alone, with no neighbors and no animals involved', () => {
+    const state = createGrassState(board);
+    state.biomass[0] = 0.5;
+    state.fertility[0] = 0;
+    // every neighbor bare -- this tile's own standing biomass is the only source
+
+    stepGrass(state, board);
+
+    const ownPotential = GRASS_PARAMS.growthRate * (GRASS_PARAMS.capacity - 0.5);
+    const ownSenescence = GRASS_PARAMS.senescenceRate * 0.5;
+    const grown = Math.min(ownPotential, ownSenescence);
+
+    expect(grown).toBeGreaterThan(0); // sanity check on the test setup itself
+    expect(state.biomass[0]).toBeCloseTo(0.5 + grown, 5);
   });
 });
 

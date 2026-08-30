@@ -56,24 +56,30 @@ export function depositFertility(state: GrassState, i: number, amount: number): 
 }
 
 export function stepGrass(state: GrassState, board: Board): void {
-  const { growthRate, capacity, spreadRate } = GRASS_PARAMS;
+  const { growthRate, capacity, spreadRate, senescenceRate } = GRASS_PARAMS;
   // Snapshot so every tile reads the *same* pre-tick neighbor biomass --
   // otherwise a tile processed early in the loop would already show its
   // grown value to a tile processed later, biasing the spread in scan order.
   const prevBiomass = state.biomass.slice();
 
-  // Pass 1: a patch of grass constantly sheds a little organic matter onto
-  // its neighbors (leaf litter, roots reaching over) regardless of whether
-  // *it* grows this tick. This is what actually lets a thickly-grazed bare
-  // tile next to a lush one recover fertility on its own -- boosting growth
-  // *potential* alone (the previous approach) did nothing when the limiting
-  // factor was fertility, which it almost always was.
-  if (spreadRate > 0) {
+  // Pass 1: standing grass constantly sheds a little organic matter, onto
+  // its own soil (senescence -- old leaves and roots turning over) and onto
+  // its neighbors' (spread -- litter drifting, roots reaching over). Neither
+  // needs an animal to happen. Senescence is what keeps an ungrazed, herd-
+  // free landscape from freezing wherever the herd last left it: without it,
+  // fertility only ever came from excretion/carcasses, so once every animal
+  // was gone there was no way for bare, nutrient-exhausted ground to ever
+  // recover on its own again. It's deliberately slow (much slower than
+  // spreadRate/excretion) so it doesn't undercut scarcity while a herd is
+  // actually grazing -- it only matters once grazing pressure eases off.
+  if (spreadRate > 0 || senescenceRate > 0) {
     for (let y = 0; y < board.height; y++) {
       for (let x = 0; x < board.width; x++) {
         const i = idx(board, x, y);
         const b = prevBiomass[i] ?? 0;
         if (b <= 0) continue;
+        if (senescenceRate > 0) depositFertility(state, i, senescenceRate * b);
+        if (spreadRate <= 0) continue;
         const shedPerNeighbor = (spreadRate * b) / NEIGHBOR_OFFSETS_8.length;
         for (const [dx, dy] of NEIGHBOR_OFFSETS_8) {
           const nx = wrap(x + dx, board.width);
