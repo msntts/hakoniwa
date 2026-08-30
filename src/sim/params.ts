@@ -5,6 +5,11 @@ export const GRASS_PARAMS = {
   // 3 breakpoints -> 4 height categories (bare / . / w / W)
   heightThresholds: [0.15, 0.45, 0.75] as const,
   colorBuckets: 8,
+  // Growth draws down this per-tile soil nutrient stock 1:1 -- no fertility,
+  // no growth, regardless of how much biomass is already there or how empty
+  // the tile looks. Replenished only through the herbivore/decomposer cycle
+  // (see HERBIVORE_PARAMS.excretionRatio / carcassFertility below).
+  fertilityCap: 1.0,
 };
 
 export const HERBIVORE_PARAMS = {
@@ -37,6 +42,13 @@ export const HERBIVORE_PARAMS = {
   reproHungerCost: 0.3,
 
   grazeBiomassThreshold: 0.1,
+
+  // 排泄 (while alive) and 死骸 (on death) are the only two ways fertility
+  // gets back into the soil -- this is what actually ties "ate here" to
+  // "something can grow here again later," instead of grass regenerating on
+  // its own regardless of what happened on that tile.
+  excretionRatio: 0.5, // fraction of each bite returned to the tile as fertility
+  carcassFertility: 0.4, // a body decomposing is a much bigger nutrient event than daily droppings
 
   // 多産多死: short-lived on purpose. At 2000 ticks (1000s) old age never
   // actually fired, so starvation was the only source of death and a

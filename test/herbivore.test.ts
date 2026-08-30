@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Board } from '../src/sim/board';
 import { createGrassState } from '../src/sim/grass';
 import { createHerbivoreState, spawnHerbivore, stepHerbivores } from '../src/sim/herbivore';
-import { HERBIVORE_PARAMS } from '../src/sim/params';
+import { GRASS_PARAMS, HERBIVORE_PARAMS } from '../src/sim/params';
 
 const board: Board = { width: 5, height: 5 };
 const noRandom = () => 0;
@@ -79,5 +79,33 @@ describe('stepHerbivores', () => {
     stepHerbivores(herd, grass, board, noRandom);
 
     expect(herd.count).toBe(1);
+  });
+
+  it('returns a share of what it eats to the tile as fertility (excretion)', () => {
+    const grass = createGrassState(board);
+    grass.biomass.fill(1);
+    grass.fertility.fill(0);
+    const herd = createHerbivoreState(10);
+    spawnHerbivore(herd, 2, 2, 0.5);
+
+    stepHerbivores(herd, grass, board, noRandom);
+
+    const tile = 2 * board.width + 2;
+    const expectedFertility = GRASS_PARAMS.grazePerBite * HERBIVORE_PARAMS.excretionRatio;
+    expect(grass.fertility[tile]).toBeCloseTo(expectedFertility, 5);
+  });
+
+  it('deposits a carcass worth of fertility on the tile where it starves', () => {
+    const grass = createGrassState(board);
+    grass.biomass.fill(0); // no food, so it starves this tick
+    grass.fertility.fill(0);
+    const herd = createHerbivoreState(10);
+    spawnHerbivore(herd, 2, 2, HERBIVORE_PARAMS.starvationHunger);
+
+    stepHerbivores(herd, grass, board, noRandom);
+
+    expect(herd.count).toBe(0);
+    const tile = 2 * board.width + 2;
+    expect(grass.fertility[tile]).toBeCloseTo(HERBIVORE_PARAMS.carcassFertility, 5);
   });
 });

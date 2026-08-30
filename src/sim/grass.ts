@@ -4,6 +4,11 @@ import { GRASS_PARAMS } from './params';
 
 export interface GrassState {
   biomass: Float32Array;
+  // Soil nutrient available to grow *new* biomass -- decomposition's output
+  // (herbivore excretion, carcasses) and growth's input. Without it, biomass
+  // cannot increase no matter how empty a tile looks: grass doesn't grow
+  // from nothing, it grows from what decomposed nearby.
+  fertility: Float32Array;
   height: Uint8Array;
   colorBucket: Uint8Array;
   prevHeight: Uint8Array;
@@ -14,6 +19,7 @@ export function createGrassState(board: Board): GrassState {
   const n = board.width * board.height;
   return {
     biomass: new Float32Array(n),
+    fertility: new Float32Array(n),
     height: new Uint8Array(n),
     colorBucket: new Uint8Array(n),
     prevHeight: new Uint8Array(n).fill(255),
@@ -27,14 +33,25 @@ export function seedGrass(state: GrassState, board: Board, rng: () => number): v
     // Mostly moderate noise, with a few deliberately sparse-but-tall vs
     // dense-but-low patches so the two visual axes are distinguishable at a glance.
     const r = rng();
+    let biomass: number;
     if (r < 0.1) {
-      state.biomass[i] = 0.15 + rng() * 0.1; // sparse but will still cross a low height threshold
+      biomass = 0.15 + rng() * 0.1; // sparse but will still cross a low height threshold
     } else if (r < 0.2) {
-      state.biomass[i] = 0.75 + rng() * 0.2; // dense and tall
+      biomass = 0.75 + rng() * 0.2; // dense and tall
     } else {
-      state.biomass[i] = 0.3 + rng() * 0.5;
+      biomass = 0.3 + rng() * 0.5;
     }
+    state.biomass[i] = biomass;
+    // Existing grass implies some soil fertility already built up before the
+    // player arrived, but not a full bank -- further growth still has to be
+    // earned back through the herbivore/decomposer cycle.
+    state.fertility[i] = biomass * 0.5;
   }
+}
+
+export function depositFertility(state: GrassState, i: number, amount: number): void {
+  const cap = GRASS_PARAMS.fertilityCap;
+  state.fertility[i] = Math.min(cap, (state.fertility[i] ?? 0) + amount);
 }
 
 export function stepGrass(state: GrassState, board: Board): void {
@@ -42,7 +59,13 @@ export function stepGrass(state: GrassState, board: Board): void {
   const { growthRate, capacity } = GRASS_PARAMS;
   for (let i = 0; i < n; i++) {
     const b = state.biomass[i] ?? 0;
-    state.biomass[i] = b + growthRate * (capacity - b);
+    const potential = growthRate * (capacity - b);
+    if (potential <= 0) continue;
+    const available = state.fertility[i] ?? 0;
+    const used = Math.min(potential, available);
+    if (used <= 0) continue;
+    state.biomass[i] = b + used;
+    state.fertility[i] = available - used;
   }
 }
 

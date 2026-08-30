@@ -1,6 +1,6 @@
 import type { Board } from './board';
 import { idx, wrap } from './board';
-import { grazeTile, type GrassState } from './grass';
+import { depositFertility, grazeTile, type GrassState } from './grass';
 import { GRASS_PARAMS, HERBIVORE_PARAMS } from './params';
 
 export interface HerbivoreState {
@@ -67,6 +67,8 @@ export function stepHerbivores(h: HerbivoreState, grass: GrassState, board: Boar
     grazeBiomassThreshold,
     reproHungerThreshold,
     reproHungerCost,
+    excretionRatio,
+    carcassFertility,
     lifespanTicks,
     capacity: maxPop,
   } = HERBIVORE_PARAMS;
@@ -105,6 +107,9 @@ export function stepHerbivores(h: HerbivoreState, grass: GrassState, board: Boar
     if ((grass.biomass[bestI] ?? 0) > grazeBiomassThreshold) {
       const eaten = grazeTile(grass, bestI, GRASS_PARAMS.grazePerBite);
       hunger -= grazeHungerRelief * (eaten / GRASS_PARAMS.grazePerBite);
+      // 排泄: what isn't digested returns to the same tile as fertility --
+      // eating here is what makes something able to grow here again later.
+      depositFertility(grass, bestI, eaten * excretionRatio);
     }
     hunger = Math.max(0, hunger);
 
@@ -112,6 +117,10 @@ export function stepHerbivores(h: HerbivoreState, grass: GrassState, board: Boar
     h.age[i] = age;
 
     if (hunger >= starvationHunger || age > lifespanTicks) {
+      // 死骸: a body decomposing where it fell is a much bigger nutrient
+      // event than daily droppings -- this is what "something dying feeds
+      // the next growth" actually means mechanically.
+      depositFertility(grass, bestI, carcassFertility);
       deaths.push(i);
       continue;
     }
