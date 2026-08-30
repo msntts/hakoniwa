@@ -36,7 +36,7 @@ export function bakeSprites(tileSize: number = TILE_SIZE): SpriteSheet {
   const gctx = grassCanvas.getContext('2d')!;
   gctx.textAlign = 'center';
   gctx.textBaseline = 'middle';
-  gctx.font = `${Math.floor(tileSize * 0.85)}px monospace`;
+  gctx.font = `bold ${Math.floor(tileSize * 0.85)}px monospace`;
 
   for (let bucket = 0; bucket < COLOR_BUCKETS; bucket++) {
     for (let h = 0; h < heights; h++) {

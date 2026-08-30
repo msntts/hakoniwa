@@ -16,9 +16,15 @@ export function createRenderer(
   sheet: SpriteSheet,
   width: number,
   height: number,
+  cssTileSize: number = sheet.tileSize,
 ): RendererState {
+  // Backing store is sized in device pixels (sheet.tileSize, which callers
+  // scale by devicePixelRatio) while the CSS box stays at the logical tile
+  // size -- otherwise glyphs render blurry on high-DPI screens.
   canvas.width = width * sheet.tileSize;
   canvas.height = height * sheet.tileSize;
+  canvas.style.width = `${width * cssTileSize}px`;
+  canvas.style.height = `${height * cssTileSize}px`;
   const ctx = canvas.getContext('2d')!;
   return {
     ctx,

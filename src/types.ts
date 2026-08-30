@@ -1,6 +1,9 @@
-export const BOARD_WIDTH = 106;
-export const BOARD_HEIGHT = 60;
-export const TILE_SIZE = 12;
+export const BOARD_WIDTH = 80;
+export const BOARD_HEIGHT = 45;
+// CSS-pixel tile size. design.md's 16px candidate ("文字も動物記号も余裕") --
+// the 12px candidate was tried first but glyphs like `W` were unreadable mush
+// once actually rendered at that size.
+export const TILE_SIZE = 16;
 
 export const DEFAULT_TICK_MS = 500;
 export const DEFAULT_EPOCH_MS = 10_000;
