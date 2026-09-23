@@ -3,12 +3,9 @@ import type { CarcassSnapshot, CarnivoreSnapshot, DirtyTile, HerbivoreSnapshot }
 import {
   ANIMAL_ANIM_FRAMES,
   animalSpriteRect,
-  CARCASS_DECAYED_COLOR,
-  CARCASS_FRESH_COLOR,
-  drawCarcassGlyph,
+  drawCarcassSprite,
   grassSpriteRect,
   hungerToBucket,
-  lerpColor,
   type SpriteSheet,
 } from './sprites';
 
@@ -20,7 +17,13 @@ const CARNIVORE_FRAME_MS = 170;
 
 const emptyHerbivores: HerbivoreSnapshot = { x: new Int16Array(0), y: new Int16Array(0), hunger: new Float32Array(0), count: 0 };
 const emptyCarnivores: CarnivoreSnapshot = { x: new Int16Array(0), y: new Int16Array(0), hunger: new Float32Array(0), count: 0 };
-const emptyCarcasses: CarcassSnapshot = { x: new Int16Array(0), y: new Int16Array(0), age: new Uint16Array(0), count: 0 };
+const emptyCarcasses: CarcassSnapshot = {
+  x: new Int16Array(0),
+  y: new Int16Array(0),
+  age: new Uint16Array(0),
+  species: new Uint8Array(0),
+  count: 0,
+};
 
 export interface RendererState {
   ctx: CanvasRenderingContext2D;
@@ -33,11 +36,24 @@ export interface RendererState {
   // needed so a tile that loses its occupant gets its grass repainted to
   // erase the stale glyph, same idea for all of them since they share the layer.
   prevOverlayTiles: Set<number>;
-  // Latest snapshots, cached so the animation loop can keep drawing animals
-  // (idle bob, mouth nibble) between sim ticks, not just when a tick arrives.
+  // Latest snapshots (this tick's landing spot), cached so the animation
+  // loop can keep drawing animals (idle bob, mouth nibble) between sim
+  // ticks, not just when a tick arrives.
   herbivores: HerbivoreSnapshot;
   carnivores: CarnivoreSnapshot;
   carcasses: CarcassSnapshot;
+  // Previous tick's positions -- the "from" side of the walk/glide
+  // interpolation drawn between herbivores/carnivores (the "to" side). Index
+  // aligned with the *current* snapshot the same way herbFacing/carnFacing
+  // are (see below), so it inherits the same swap-remove caveat.
+  fromHerbivores: HerbivoreSnapshot;
+  fromCarnivores: CarnivoreSnapshot;
+  // performance.now() when herbivores/carnivores/carcasses last landed, plus
+  // how long (ms) a tick is meant to span -- together these turn "now" into
+  // the 0..1 progress used to glide from fromHerbivores to herbivores over
+  // the full tick instead of jump-cutting there (see docs/manual.html #s5).
+  tickStartMs: number;
+  tickDurationMs: number;
   // Index-aligned facing (+1 = drawn as baked, -1 = mirrored). There's no
   // stable per-individual id in HerbivoreState/CarnivoreState (death uses
   // swap-remove), so this occasionally mis-attributes for one tick right
@@ -52,6 +68,7 @@ export function createRenderer(
   width: number,
   height: number,
   cssTileSize: number = sheet.tileSize,
+  tickDurationMs: number = 0,
 ): RendererState {
   // Backing store is sized in device pixels (sheet.tileSize, which callers
   // scale by devicePixelRatio) while the CSS box stays at the logical tile
@@ -72,6 +89,10 @@ export function createRenderer(
     herbivores: emptyHerbivores,
     carnivores: emptyCarnivores,
     carcasses: emptyCarcasses,
+    fromHerbivores: emptyHerbivores,
+    fromCarnivores: emptyCarnivores,
+    tickStartMs: 0,
+    tickDurationMs,
     herbFacing: new Int8Array(0),
     carnFacing: new Int8Array(0),
   };
@@ -105,6 +126,21 @@ function facingFromDelta(currX: number, prevX: number, boardWidth: number, fallb
   return fallback;
 }
 
+// Interpolates one axis from a previous-tick coordinate to this tick's,
+// taking the board's wrap into account the same way facingFromDelta does
+// (shortest way around, not always increasing). `fromV` is undefined for an
+// index with no previous-tick counterpart (a birth, or a post-death
+// swap-remove reshuffle) -- those just appear at their landing tile with no
+// glide, same as the existing facing fallback.
+function interpAxis(fromV: number | undefined, toV: number, max: number, progress: number): number {
+  if (fromV === undefined) return toV;
+  let d = toV - fromV;
+  if (d > max / 2) d -= max;
+  else if (d < -max / 2) d += max;
+  const v = fromV + d * progress;
+  return ((v % max) + max) % max;
+}
+
 // Index-aligned with the incoming snapshot, not identity-aligned with the
 // previous one -- see the RendererState.herbFacing/carnFacing doc comment.
 function computeFacing(currX: Int16Array, count: number, prevX: Int16Array, prevFacing: Int8Array, boardWidth: number): Int8Array {
@@ -128,8 +164,8 @@ function drawCarcasses(r: RendererState, carcasses: CarcassSnapshot): void {
     const x = carcasses.x[k] ?? 0;
     const y = carcasses.y[k] ?? 0;
     const t = Math.min(1, (carcasses.age[k] ?? 0) / decayTicks);
-    const color = lerpColor(CARCASS_FRESH_COLOR, CARCASS_DECAYED_COLOR, t);
-    drawCarcassGlyph(r.ctx, r.sheet.tileSize, x, y, color);
+    const species = carcasses.species[k] ?? 0;
+    drawCarcassSprite(r.ctx, r.sheet.tileSize, x, y, species, t);
   }
 }
 
@@ -156,30 +192,72 @@ function drawFacingSprite(
   ctx.restore();
 }
 
-function drawAnimatedHerbivores(r: RendererState, herbivores: HerbivoreSnapshot, nowMs: number): void {
+function drawAnimatedHerbivores(
+  r: RendererState,
+  herbivores: HerbivoreSnapshot,
+  from: HerbivoreSnapshot,
+  progress: number,
+  nowMs: number,
+): void {
   const baseFrame = Math.floor(nowMs / HERBIVORE_FRAME_MS) % ANIMAL_ANIM_FRAMES;
   for (let k = 0; k < herbivores.count; k++) {
-    const x = herbivores.x[k] ?? 0;
-    const y = herbivores.y[k] ?? 0;
+    const toX = herbivores.x[k] ?? 0;
+    const toY = herbivores.y[k] ?? 0;
+    const ix = interpAxis(from.x[k], toX, r.width, progress);
+    const iy = interpAxis(from.y[k], toY, r.height, progress);
     const bucket = hungerToBucket(herbivores.hunger[k] ?? 0);
     // Desync neighboring individuals so a herd doesn't nibble in lockstep.
     const frame = (baseFrame + k * 3) % ANIMAL_ANIM_FRAMES;
     const rect = animalSpriteRect(r.sheet, frame, bucket);
     const facing = r.herbFacing[k] ?? 1;
-    drawFacingSprite(r.ctx, r.sheet.herbivoreCanvas, rect, x * r.sheet.tileSize, y * r.sheet.tileSize, r.sheet.tileSize, facing);
+    drawFacingSprite(r.ctx, r.sheet.herbivoreCanvas, rect, ix * r.sheet.tileSize, iy * r.sheet.tileSize, r.sheet.tileSize, facing);
   }
 }
 
-function drawAnimatedCarnivores(r: RendererState, carnivores: CarnivoreSnapshot, nowMs: number): void {
+function drawAnimatedCarnivores(
+  r: RendererState,
+  carnivores: CarnivoreSnapshot,
+  from: CarnivoreSnapshot,
+  progress: number,
+  nowMs: number,
+): void {
   const baseFrame = Math.floor(nowMs / CARNIVORE_FRAME_MS) % ANIMAL_ANIM_FRAMES;
   for (let k = 0; k < carnivores.count; k++) {
-    const x = carnivores.x[k] ?? 0;
-    const y = carnivores.y[k] ?? 0;
+    const toX = carnivores.x[k] ?? 0;
+    const toY = carnivores.y[k] ?? 0;
+    const ix = interpAxis(from.x[k], toX, r.width, progress);
+    const iy = interpAxis(from.y[k], toY, r.height, progress);
     const bucket = hungerToBucket(carnivores.hunger[k] ?? 0);
     const frame = (baseFrame + k * 3) % ANIMAL_ANIM_FRAMES;
     const rect = animalSpriteRect(r.sheet, frame, bucket);
     const facing = r.carnFacing[k] ?? 1;
-    drawFacingSprite(r.ctx, r.sheet.carnivoreCanvas, rect, x * r.sheet.tileSize, y * r.sheet.tileSize, r.sheet.tileSize, facing);
+    drawFacingSprite(r.ctx, r.sheet.carnivoreCanvas, rect, ix * r.sheet.tileSize, iy * r.sheet.tileSize, r.sheet.tileSize, facing);
+  }
+}
+
+// A gliding animal's sprite sits at a fractional tile coordinate, so it can
+// overlap up to 2x2 grid tiles instead of exactly one -- add all of them, or
+// the tile it's mid-crossing into never gets its grass repainted underneath.
+function addInterpolatedTiles(
+  tiles: Set<number>,
+  width: number,
+  height: number,
+  to: { x: Int16Array | Uint16Array; y: Int16Array | Uint16Array },
+  from: { x: Int16Array | Uint16Array; y: Int16Array | Uint16Array },
+  count: number,
+  progress: number,
+): void {
+  for (let k = 0; k < count; k++) {
+    const ix = interpAxis(from.x[k], to.x[k] ?? 0, width, progress);
+    const iy = interpAxis(from.y[k], to.y[k] ?? 0, height, progress);
+    const x0 = Math.floor(ix) % width;
+    const y0 = Math.floor(iy) % height;
+    const x1 = (x0 + 1) % width;
+    const y1 = (y0 + 1) % height;
+    tiles.add(y0 * width + x0);
+    tiles.add(y0 * width + x1);
+    tiles.add(y1 * width + x0);
+    tiles.add(y1 * width + x1);
   }
 }
 
@@ -188,14 +266,13 @@ function overlayTileSet(
   herbivores: HerbivoreSnapshot,
   carnivores: CarnivoreSnapshot,
   carcasses: CarcassSnapshot,
+  fromHerbivores: HerbivoreSnapshot,
+  fromCarnivores: CarnivoreSnapshot,
+  progress: number,
 ): Set<number> {
   const tiles = new Set<number>();
-  for (let k = 0; k < herbivores.count; k++) {
-    tiles.add((herbivores.y[k] ?? 0) * r.width + (herbivores.x[k] ?? 0));
-  }
-  for (let k = 0; k < carnivores.count; k++) {
-    tiles.add((carnivores.y[k] ?? 0) * r.width + (carnivores.x[k] ?? 0));
-  }
+  addInterpolatedTiles(tiles, r.width, r.height, herbivores, fromHerbivores, herbivores.count, progress);
+  addInterpolatedTiles(tiles, r.width, r.height, carnivores, fromCarnivores, carnivores.count, progress);
   for (let k = 0; k < carcasses.count; k++) {
     tiles.add((carcasses.y[k] ?? 0) * r.width + (carcasses.x[k] ?? 0));
   }
@@ -209,7 +286,8 @@ function overlayTileSet(
 // motion reads smoothly between ticks). Grass beneath a vacated tile is
 // repainted here too, same as the old single tick-driven repaint used to do.
 function paintOverlayFrame(r: RendererState, nowMs: number): void {
-  const currOverlayTiles = overlayTileSet(r, r.herbivores, r.carnivores, r.carcasses);
+  const progress = r.tickDurationMs > 0 ? Math.min(1, Math.max(0, (nowMs - r.tickStartMs) / r.tickDurationMs)) : 1;
+  const currOverlayTiles = overlayTileSet(r, r.herbivores, r.carnivores, r.carcasses, r.fromHerbivores, r.fromCarnivores, progress);
 
   const repaint = new Set<number>();
   for (const i of r.prevOverlayTiles) repaint.add(i);
@@ -217,8 +295,8 @@ function paintOverlayFrame(r: RendererState, nowMs: number): void {
   for (const i of repaint) paintGrassTile(r, i);
 
   drawCarcasses(r, r.carcasses);
-  drawAnimatedHerbivores(r, r.herbivores, nowMs);
-  drawAnimatedCarnivores(r, r.carnivores, nowMs);
+  drawAnimatedHerbivores(r, r.herbivores, r.fromHerbivores, progress, nowMs);
+  drawAnimatedCarnivores(r, r.carnivores, r.fromCarnivores, progress, nowMs);
 
   r.prevOverlayTiles = currOverlayTiles;
 }
@@ -258,10 +336,14 @@ export function paintInit(
   r.herbivores = herbivores;
   r.carnivores = carnivores;
   r.carcasses = carcasses;
+  // Same as "to": nothing to glide from yet, so the first frame just holds.
+  r.fromHerbivores = herbivores;
+  r.fromCarnivores = carnivores;
+  r.tickStartMs = performance.now();
   r.herbFacing = new Int8Array(herbivores.count).fill(1);
   r.carnFacing = new Int8Array(carnivores.count).fill(1);
 
-  paintOverlayFrame(r, performance.now());
+  paintOverlayFrame(r, r.tickStartMs);
 }
 
 export function applyTick(
@@ -279,13 +361,21 @@ export function applyTick(
 
   r.herbFacing = computeFacing(herbivores.x, herbivores.count, r.herbivores.x, r.herbFacing, r.width);
   r.carnFacing = computeFacing(carnivores.x, carnivores.count, r.carnivores.x, r.carnFacing, r.width);
+  // This tick's landing spot becomes the "to" side; whatever was "to" a
+  // moment ago (where everything visually still sits, at progress 1) becomes
+  // the new "from" -- so the glide always starts from where the eye left off.
+  r.fromHerbivores = r.herbivores;
+  r.fromCarnivores = r.carnivores;
   r.herbivores = herbivores;
   r.carnivores = carnivores;
   r.carcasses = carcasses;
+  r.tickStartMs = performance.now();
 
   // Paint immediately too (not just on the next animation frame) so a tick's
-  // move/death/birth never waits on the rAF loop to show up.
-  paintOverlayFrame(r, performance.now());
+  // move/death/birth never waits on the rAF loop to show up -- this first
+  // frame lands at progress 0, i.e. still drawn at the old position, and the
+  // rAF loop then glides it to the new one over the coming tick.
+  paintOverlayFrame(r, r.tickStartMs);
 
   return dirty.length;
 }

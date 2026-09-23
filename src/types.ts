@@ -5,7 +5,12 @@ export const BOARD_HEIGHT = 45;
 // once actually rendered at that size.
 export const TILE_SIZE = 16;
 
-export const DEFAULT_TICK_MS = 500;
+// 4x a raw sim step's worth of time (was 500ms): eating/hunting only read as
+// legible "scenes" once each animal has enough on-screen time per turn to
+// glide into its new tile instead of jump-cutting there (see renderer.ts's
+// from/to position interpolation). Slowing this down also slows the sim's
+// real-time progression by the same 4x -- intentional, not a side effect.
+export const DEFAULT_TICK_MS = 2000;
 export const DEFAULT_EPOCH_MS = 10_000;
 
 export interface HerbivoreSnapshot {
@@ -28,6 +33,7 @@ export interface CarcassSnapshot {
   x: Int16Array;
   y: Int16Array;
   age: Uint16Array;
+  species: Uint8Array; // 0 = herbivore, 1 = carnivore -- see CARCASS_SPECIES
   count: number;
 }
 

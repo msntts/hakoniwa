@@ -7,12 +7,17 @@ import { CARCASS_PARAMS } from './params';
 // several ticks, releasing its fertility gradually rather than all at once,
 // and stays visible while it does. This is the causal loop (death -> decay
 // -> nutrient -> future growth) made visible, not just an internal number.
+// Which species a carcass came from, purely for the fallen-silhouette drawn
+// in sprites.ts -- decay mechanics below don't care.
+export const CARCASS_SPECIES = { HERBIVORE: 0, CARNIVORE: 1 } as const;
+
 export interface CarcassState {
   capacity: number;
   count: number;
   x: Int16Array;
   y: Int16Array;
   age: Uint16Array; // ticks since death
+  species: Uint8Array; // see CARCASS_SPECIES
 }
 
 export function createCarcassState(capacity: number): CarcassState {
@@ -22,15 +27,17 @@ export function createCarcassState(capacity: number): CarcassState {
     x: new Int16Array(capacity),
     y: new Int16Array(capacity),
     age: new Uint16Array(capacity),
+    species: new Uint8Array(capacity),
   };
 }
 
-export function spawnCarcass(c: CarcassState, x: number, y: number): void {
+export function spawnCarcass(c: CarcassState, x: number, y: number, species: 0 | 1 = CARCASS_SPECIES.HERBIVORE): void {
   if (c.count >= c.capacity) return; // extreme die-offs just skip the visual, decay pressure already applied via death
   const i = c.count;
   c.x[i] = x;
   c.y[i] = y;
   c.age[i] = 0;
+  c.species[i] = species;
   c.count++;
 }
 
@@ -40,6 +47,7 @@ function removeCarcassAt(c: CarcassState, index: number): void {
     c.x[index] = c.x[last] ?? 0;
     c.y[index] = c.y[last] ?? 0;
     c.age[index] = c.age[last] ?? 0;
+    c.species[index] = c.species[last] ?? 0;
   }
   c.count--;
 }

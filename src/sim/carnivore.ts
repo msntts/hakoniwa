@@ -1,6 +1,6 @@
 import type { Board } from './board';
 import { idx, NEIGHBOR_OFFSETS_8, wrap } from './board';
-import { spawnCarcass, type CarcassState } from './carcass';
+import { CARCASS_SPECIES, spawnCarcass, type CarcassState } from './carcass';
 import { removeHerbivoreAt, type HerbivoreState } from './herbivore';
 import { CARNIVORE_PARAMS } from './params';
 
@@ -137,7 +137,7 @@ export function stepCarnivores(
     c.age[i] = age;
 
     if (hunger >= starvationHunger || age > lifespanTicks) {
-      spawnCarcass(carcasses, bestX, bestY);
+      spawnCarcass(carcasses, bestX, bestY, CARCASS_SPECIES.CARNIVORE);
       deaths.push(i);
       continue;
     }

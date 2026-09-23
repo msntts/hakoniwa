@@ -14,7 +14,7 @@ const btnPause = document.querySelector<HTMLButtonElement>('#btn-pause')!;
 // ballooning the canvas backing store on very high (e.g. 3x) displays.
 const dpr = Math.min(window.devicePixelRatio || 1, 2);
 const sheet = bakeSprites(TILE_SIZE * dpr);
-const renderer = createRenderer(canvas, sheet, BOARD_WIDTH, BOARD_HEIGHT, TILE_SIZE);
+const renderer = createRenderer(canvas, sheet, BOARD_WIDTH, BOARD_HEIGHT, TILE_SIZE, DEFAULT_TICK_MS);
 
 const worker = new Worker(new URL('./worker/sim.worker.ts', import.meta.url), { type: 'module' });
 

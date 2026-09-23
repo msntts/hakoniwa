@@ -114,7 +114,7 @@
 <p>80×45 タイルのトーラス（端がつながった）盤面で、<strong>草・草食獣・肉食獣・死骸・土壌養分</strong>の5つが相互作用するリアルタイムシミュレーション。プレイヤーの介入（神のダイヤル・賭け）はまだ無く、今は「生態系が放っておくとどう振る舞うか」を観察する段階。</p>
 
 <div class="grid2">
-  <div class="card"><h4>時間</h4>1 tick = 500ms。20 tick = 1 エポック（10秒）。エポックは現状カウンタだけで、何も起きない（将来の賭け精算・気候抽選のフック）。</div>
+  <div class="card"><h4>時間</h4>1 tick = 2000ms。5 tick = 1 エポック（10秒、実時間は変わらない）。エポックは現状カウンタだけで、何も起きない（将来の賭け精算・気候抽選のフック）。</div>
   <div class="card"><h4>盤面</h4>80×45 = 3,600 タイル。1タイル 16px。上下左右が折り返してつながる。</div>
   <div class="card"><h4>初期状態</h4>草はほぼ全面に生えた状態から始まり、草食獣150・肉食獣12がランダム配置。乱数シードは起動時刻（UIからの指定は不可）。</div>
   <div class="card"><h4>典型的な推移</h4>草食獣が爆発的に増える → 草を食べ尽くす／捕食者が増えすぎる → 崩壊 → 生き残りと土壌から回復、の波。絶滅は普通に起きる。</div>
@@ -297,7 +297,7 @@
 <div class="table-wrap">
 <table>
   <tr><th>項目</th><th>値</th><th>仕様</th></tr>
-  <tr><td>発生</td><td></td><td>草食獣・肉食獣が餓死・老衰したタイルに1つ（捕食された個体は残さない）</td></tr>
+  <tr><td>発生</td><td></td><td>草食獣・肉食獣が餓死・老衰したタイルに1つ（捕食された個体は残さない）。どちらの種が死んだかを記録する（<code>CarcassState.species</code>）が、分解の速さ・養分量には影響しない。表示（5章）で倒れた姿を種ごとに描き分けるためだけの情報</td></tr>
   <tr><td><code>CARCASS_PARAMS.fertility</code></td><td class="num">0.4</td><td>1体が分解し終わるまでに返す養分の総量（種によらず一定）</td></tr>
   <tr><td><code>CARCASS_PARAMS.decayTicks</code></td><td class="num">10</td><td>分解にかかるtick数（約5秒）。毎tick 0.04 ずつ返す</td></tr>
   <tr><td>通行</td><td></td><td>分解中はそのタイルに誰も移動できない（将来、死骸を食べる種だけ例外にする想定）</td></tr>
@@ -306,19 +306,20 @@
 
 <!-- ============================================================ -->
 <h2 id="s5">5. 表示の仕様</h2>
-<p>1タイルに描くのは1記号。design.md の優先順位（動物 &gt; 植物 &gt; 背景）に従って下から重ねる。</p>
+<p>1タイルに描くのは1枚のスプライト。design.md の優先順位（動物 &gt; 植物 &gt; 背景）に従って下から重ねる。草・草食獣・肉食獣とも、[高さ/空腹バケット] × [色バケット/フレーム] のベクタ図形をあらかじめ焼き込んだシートから blit する（<code>render/sprites.ts</code>）。</p>
 <div class="table-wrap">
 <table>
   <tr><th>層</th><th>表現</th><th>意味</th></tr>
   <tr><td>背景色</td><td>土色 → 緑（8段階）</td><td>草の <strong>量</strong>（biomass）</td></tr>
-  <tr><td>文字</td><td>なし / <code>.</code> / <code>w</code> / <code>W</code></td><td>草の <strong>高さ</strong>（biomass 0.15 / 0.45 / 0.75 で区切る）</td></tr>
-  <tr><td>死骸</td><td><code>x</code>（赤 → 土色に褪せる）</td><td>分解の進み具合</td></tr>
-  <tr><td>草食獣</td><td>● 黄</td><td>design.md：丸 = 植物食</td></tr>
-  <tr><td>肉食獣</td><td>▲ 橙（最前面）</td><td>design.md：三角 = 肉食</td></tr>
+  <tr><td>草の形</td><td>なし（土の斑点のみ） / 葉3本 / 葉5本 / 葉7本、いずれもベクタ図形</td><td>草の <strong>高さ</strong>（biomass 0.15 / 0.45 / 0.75 で区切る）</td></tr>
+  <tr><td>死骸</td><td>倒れた姿のベクタ図形（発生元の種のボディ形状を横倒しにしたもの。赤 → 土色に褪せる）</td><td>分解の進み具合／どちらの種の死骸か</td></tr>
+  <tr><td>草食獣</td><td>丸みのある箱型ボディ、キャラメル系の茶〜くすんだ黄土色（空腹で変化）、アイドルの上下動と口の開閉アニメーション</td><td>design.md：丸っぽい輪郭 = 植物食</td></tr>
+  <tr><td>肉食獣</td><td>細身の箱型ボディ、縞模様、橙〜くすんだ橙（空腹で変化）、同様にアニメーション（最前面）</td><td>design.md：鋭い輪郭 = 肉食</td></tr>
 </table>
 </div>
-<p><strong>現状のずれ：</strong>design.md は「背景色=量、文字=構造」を独立した2軸にしたいが、今は両方とも biomass の1変数から決まっていて独立していない。土壌養分（fertility）は画面に出ない。</p>
+<p><strong>現状のずれ：</strong>design.md は「背景色=量、草の形=構造」を独立した2軸にしたいが、今は両方とも biomass の1変数から決まっていて独立していない。土壌養分（fertility）は画面に出ない。</p>
 <p><strong>部分描画：</strong>毎tick塗り直すのは「見た目の段階が変わった草タイル」＋「前tickか今tickに動物・死骸がいたタイル」だけ。HUDの <code>dirty</code> がその数。</p>
+<p><strong>移動の補間：</strong>動物の位置は tick の瞬間に新しいタイルへ飛ぶのではなく、前 tick の位置から今 tick の位置まで tick 時間（2000ms）いっぱいかけて滑らかに動く（<code>render/renderer.ts</code> の from/to 補間）。捕食・採食の瞬間をジャンプカットにせず、目で追える「シーン」にするための変更。死骸は動かないのでそのまま。</p>
 
 <!-- ============================================================ -->
 <h2 id="s6">6. アーキテクチャ</h2>
@@ -335,7 +336,7 @@ render/renderer.ts 差分描画          ◀─ tick ─  sim/loop.ts      tick(
                                                sim/board.ts     座標・折り返し・近傍</pre>
 <ul>
   <li><strong>モジュール境界：</strong>草は動物を知らない。草食獣は草を「引数として」受け取って操作する。肉食獣は草食獣を引数として受け取る。上の段が下の段に依存し、逆は無い。気候などを足すときもこの向きを守る。</li>
-  <li><strong>メッセージ：</strong><code>src/types.ts</code> の <code>MainToWorker</code> / <code>WorkerToMain</code>。毎tick、草の差分と各種族の位置が送られる。<code>set-tick-rate</code> は定義済みだがUIは無い。</li>
+  <li><strong>メッセージ：</strong><code>src/types.ts</code> の <code>MainToWorker</code> / <code>WorkerToMain</code>。毎tick、草の差分と各種族の位置が送られる。死骸のスナップショットは座標・経過tickに加えて発生元の種（<code>species</code>）も持つ（表示の描き分け専用、4.5章）。位置はtickの瞬間の着地点であって、その間の補間はメインスレッド側（renderer.ts）の仕事。<code>set-tick-rate</code> は定義済みだがUIは無く、変更してもrenderer側の補間時間（<code>DEFAULT_TICK_MS</code> 起動時の値で固定）には反映されない。</li>
   <li><strong>配信：</strong><code>main</code> に push すると GitHub Actions が typecheck・test・build して GitHub Pages に公開（<code>https://msntts.github.io/hakoniwa/</code>）。</li>
 </ul>
 
@@ -405,6 +406,9 @@ render/renderer.ts 差分描画          ◀─ tick ─  sim/loop.ts      tick(
 <div class="table-wrap">
 <table>
   <tr><th>判断</th><th>理由・経緯</th></tr>
+  <tr><td>死骸の表示を「x」の一文字グリフから、発生元の種のボディ形状を横倒しにしたベクタ図形に変更</td><td>死骸が種によらず同じ記号だったため、何が倒れているか画面から分からなかった。生体のシルエット（草食獣＝丸みのある体、肉食獣＝細身＋縞模様）を再利用し、耳が垂れ脚が硬直して広がる「倒れた」ポーズにして描き分けた。色のフェード（新鮮な赤→土色）は変更していない。このためだけに <code>CarcassState</code>/<code>CarcassSnapshot</code> に <code>species</code>（0=草食獣・1=肉食獣）を追加した（4.5章）</td></tr>
+  <tr><td>草食獣の健康時の体色を黄（<code>#ffd83d</code>）から茶（<code>#c98a3d</code>）寄りに変更</td><td>黄色が鮮やかすぎて生態系の落ち着いた配色から浮いていたため、より土に近い茶系に寄せた。空腹時の色（くすんだ黄土色）は変更なし</td></tr>
+  <tr><td>1 tick 500ms → 2000ms、動物の描画位置を前tick→今tickへ滑らかに補間</td><td>tickごとに新しいタイルへ瞬間移動していたため、捕食・採食の瞬間が一瞬すぎて何が起きたか分かりにくかった。進行速度自体を1/4に落とし、その分の時間で「前の場所から今の場所へ歩く/近づく」動きを見せることで、tick間の出来事を1つの見えるシーンにした。シミュレーションのロジック（<code>sim/loop.ts</code>の<code>tick()</code>）自体は変更していない</td></tr>
   <tr><td>肉食獣の繁殖条件を大幅に厳しくし、上限を500→150に</td><td>最初の設定（捕食1回で −0.5）では捕食者391 対 草食獣9と、捕食者が40倍に増えた。ピラミッドが逆転していた</td></tr>
   <tr><td>捕食された個体は死骸を残さない</td><td>体は捕食者に移る扱い。自然死だけが死骸として分解者に回る（design.md の「死骸 ← 捕食者」の矢印に対応）</td></tr>
   <tr><td>死骸のパラメータを種共通の <code>CARCASS_PARAMS</code> に</td><td>体は種によらず体。種ごとに変える必要が出たら分ける</td></tr>

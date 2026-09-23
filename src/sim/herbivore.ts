@@ -1,6 +1,6 @@
 import type { Board } from './board';
 import { idx, NEIGHBOR_OFFSETS_8, wrap } from './board';
-import { spawnCarcass, type CarcassState } from './carcass';
+import { CARCASS_SPECIES, spawnCarcass, type CarcassState } from './carcass';
 import { depositFertility, grazeTile, type GrassState } from './grass';
 import { GRASS_PARAMS, HERBIVORE_PARAMS } from './params';
 
@@ -129,7 +129,7 @@ export function stepHerbivores(
     if (hunger >= starvationHunger || age > lifespanTicks) {
       // 死骸: stays put and visible, releasing fertility gradually as it
       // decomposes (see stepCarcasses) instead of dumping it all at once.
-      spawnCarcass(carcasses, bestX, bestY);
+      spawnCarcass(carcasses, bestX, bestY, CARCASS_SPECIES.HERBIVORE);
       deaths.push(i);
       continue;
     }

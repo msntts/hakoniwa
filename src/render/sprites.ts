@@ -1,7 +1,7 @@
 import { GRASS_PARAMS } from '../sim/params';
 import { TILE_SIZE } from '../types';
 
-const HEIGHT_GLYPHS = [' ', '.', 'w', 'W'];
+const GRASS_HEIGHTS = 4; // 0 = bare soil .. 3 = lush, see grass.ts heightFor()
 const COLOR_BUCKETS = GRASS_PARAMS.colorBuckets;
 
 // bucket 0 = bare/dry soil, bucket max = lush green.
@@ -39,6 +39,91 @@ export const CARCASS_FRESH_COLOR: readonly [number, number, number] = [0xb2, 0x3
 export const CARCASS_DECAYED_COLOR: readonly [number, number, number] = SOIL_COLOR;
 
 // ============================================================
+// Grass tile illustration: a handful of tapered blade shapes drawn per
+// [height category] x [color bucket], replacing the old ascii glyph. Height 0
+// (bare soil) draws no blades at all -- just a couple of dry flecks -- same
+// as the old blank glyph. Baked once per bucket/height combination and
+// reused across every tile sharing that combination (there is no per-tile
+// variation, matching the old glyph's behavior).
+// ============================================================
+
+const BLADE_DRY: [number, number, number] = [0x9a, 0x8a, 0x4a];
+const BLADE_LUSH: [number, number, number] = [0x2f, 0x9e, 0x3a];
+const BLADE_HIGHLIGHT: [number, number, number] = [0xe6, 0xf5, 0xb0];
+const BARE_SPECK_COLOR = '#241b12';
+
+function bladeColor(t: number, highlight: boolean): string {
+  const base = lerpTuple(BLADE_DRY, BLADE_LUSH, t);
+  return highlight ? toCss(lerpTuple(base, BLADE_HIGHLIGHT, 0.4)) : toCss(base);
+}
+
+interface BladeSpec {
+  dx: number; // base x offset, fraction of tileSize from tile center
+  h: number; // blade height, fraction of tileSize
+  lean: number; // tip x offset from base, fraction of tileSize
+  w: number; // base width, fraction of tileSize
+  highlight?: boolean;
+}
+
+// Indexed by height category (0..3). Heights/leans hand-picked so blades stay
+// inside the tile even at the tallest (lush) category.
+const GRASS_BLADE_SPECS: readonly (readonly BladeSpec[])[] = [
+  [],
+  [
+    { dx: -0.18, h: 0.3, lean: 0.04, w: 0.1 },
+    { dx: 0.02, h: 0.36, lean: -0.03, w: 0.1, highlight: true },
+    { dx: 0.2, h: 0.28, lean: 0.05, w: 0.09 },
+  ],
+  [
+    { dx: -0.3, h: 0.4, lean: 0.06, w: 0.1 },
+    { dx: -0.12, h: 0.52, lean: -0.05, w: 0.11, highlight: true },
+    { dx: 0.02, h: 0.46, lean: 0.04, w: 0.1 },
+    { dx: 0.16, h: 0.56, lean: -0.06, w: 0.11, highlight: true },
+    { dx: 0.32, h: 0.38, lean: 0.05, w: 0.09 },
+  ],
+  [
+    { dx: -0.34, h: 0.55, lean: 0.08, w: 0.11 },
+    { dx: -0.2, h: 0.68, lean: -0.06, w: 0.12, highlight: true },
+    { dx: -0.06, h: 0.6, lean: 0.05, w: 0.11 },
+    { dx: 0.06, h: 0.74, lean: -0.08, w: 0.12, highlight: true },
+    { dx: 0.2, h: 0.62, lean: 0.06, w: 0.11 },
+    { dx: 0.34, h: 0.52, lean: -0.05, w: 0.1 },
+    { dx: 0.0, h: 0.7, lean: 0.0, w: 0.1, highlight: true },
+  ],
+];
+
+// A single tapered blade: a base of `width`, curving via `lean` to a point at
+// the top. Drawn base-up in tile-local pixel space.
+function drawBlade(ctx: CanvasRenderingContext2D, baseX: number, baseY: number, height: number, lean: number, width: number, color: string): void {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(baseX - width / 2, baseY);
+  ctx.quadraticCurveTo(baseX + lean * 0.5, baseY - height * 0.55, baseX + lean, baseY - height);
+  ctx.quadraticCurveTo(baseX + lean * 0.5 + width * 0.3, baseY - height * 0.55, baseX + width / 2, baseY);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawGrassTile(ctx: CanvasRenderingContext2D, x: number, y: number, tileSize: number, height: number, bucketT: number): void {
+  if (height === 0) {
+    ctx.fillStyle = BARE_SPECK_COLOR;
+    ctx.beginPath();
+    ctx.arc(x + tileSize * 0.35, y + tileSize * 0.65, tileSize * 0.045, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + tileSize * 0.62, y + tileSize * 0.5, tileSize * 0.035, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  const cx = x + tileSize / 2;
+  const groundY = y + tileSize * 0.86;
+  for (const s of GRASS_BLADE_SPECS[height] ?? []) {
+    drawBlade(ctx, cx + s.dx * tileSize, groundY, s.h * tileSize, s.lean * tileSize, s.w * tileSize, bladeColor(bucketT, s.highlight ?? false));
+  }
+}
+
+// ============================================================
 // Animal shapes: a shared box-body + rectangular-mouth plan (see docs/design
 // memo), differentiated per species only by proportions/markings. Baked as
 // an [animation frame] x [hunger bucket] sprite strip per species, always
@@ -46,7 +131,7 @@ export const CARCASS_DECAYED_COLOR: readonly [number, number, number] = SOIL_COL
 // renderer.ts, not baked separately, since a horizontal flip is free.
 // ============================================================
 
-const HERBIVORE_HEALTHY: [number, number, number] = [0xff, 0xd8, 0x3d];
+const HERBIVORE_HEALTHY: [number, number, number] = [0xc9, 0x8a, 0x3d];
 const HERBIVORE_HUNGRY: [number, number, number] = [0x8f, 0x7d, 0x52];
 const CARNIVORE_HEALTHY: [number, number, number] = [0xf2, 0xa3, 0x3a];
 const CARNIVORE_HUNGRY: [number, number, number] = [0x8a, 0x5a, 0x3a];
@@ -92,18 +177,23 @@ function drawFeet(ctx: CanvasRenderingContext2D, bw: number, bh: number, r: numb
 
 // Rectangular mouth: the short side (height) stretches open to read as
 // eating. No teeth and no eyes anywhere in this visual language -- the mouth
-// and body motion carry the whole read.
+// and body motion carry the whole read. Width is sized relative to the
+// body's half-width (bw) rather than the overall radius, and reaches up to
+// about half the body's full width at max openness, so it stays legible
+// even when the sprite renders small.
 function drawMouth(
   ctx: CanvasRenderingContext2D,
   mx: number,
   my: number,
+  bw: number,
   r: number,
   mouthOpen: number,
   color: string,
   openAmount: number,
+  baseWidth: number,
   widen: number,
 ): void {
-  const mouthW = r * (0.36 + widen * mouthOpen);
+  const mouthW = bw * (baseWidth + widen * mouthOpen);
   const mouthH = r * (0.07 + openAmount * mouthOpen);
   ctx.fillStyle = color;
   roundRectPath(ctx, mx - mouthW / 2, my - mouthH / 2, mouthW, mouthH, mouthH * 0.4);
@@ -149,7 +239,7 @@ function drawHerbivoreShape(ctx: CanvasRenderingContext2D, cx: number, cy: numbe
   roundRectPath(ctx, -bw, -bh, bw * 2, bh * 2, cr);
   ctx.fill();
 
-  drawMouth(ctx, bw * 0.78, bh * 0.4, r, pose.mouthOpen, toCss(MOUTH_COLOR), 0.3, 0);
+  drawMouth(ctx, bw * 0.78, bh * 0.4, bw, r, pose.mouthOpen, toCss(MOUTH_COLOR), 0.3, 0.85, 0.3);
 
   ctx.restore();
 }
@@ -202,7 +292,7 @@ function drawTigerShape(ctx: CanvasRenderingContext2D, cx: number, cy: number, s
     ctx.stroke();
   }
 
-  drawMouth(ctx, bw * 0.82, bh * 0.4, r, pose.mouthOpen, toCss(TIGER_MOUTH_COLOR), 0.55, 0.18);
+  drawMouth(ctx, bw * 0.82, bh * 0.4, bw, r, pose.mouthOpen, toCss(TIGER_MOUTH_COLOR), 0.55, 0.75, 0.25);
 
   ctx.restore();
 }
@@ -264,26 +354,20 @@ export interface SpriteSheet {
 }
 
 export function bakeSprites(tileSize: number = TILE_SIZE): SpriteSheet {
-  const heights = HEIGHT_GLYPHS.length;
+  const heights = GRASS_HEIGHTS;
   const grassCanvas = document.createElement('canvas');
   grassCanvas.width = heights * tileSize;
   grassCanvas.height = COLOR_BUCKETS * tileSize;
   const gctx = grassCanvas.getContext('2d')!;
-  gctx.textAlign = 'center';
-  gctx.textBaseline = 'middle';
-  gctx.font = `bold ${Math.floor(tileSize * 0.85)}px monospace`;
 
   for (let bucket = 0; bucket < COLOR_BUCKETS; bucket++) {
+    const bucketT = COLOR_BUCKETS <= 1 ? 0 : bucket / (COLOR_BUCKETS - 1);
     for (let h = 0; h < heights; h++) {
       const x = h * tileSize;
       const y = bucket * tileSize;
       gctx.fillStyle = bucketColor(bucket);
       gctx.fillRect(x, y, tileSize, tileSize);
-      const glyph = HEIGHT_GLYPHS[h];
-      if (glyph && glyph !== ' ') {
-        gctx.fillStyle = '#e8e8d8';
-        gctx.fillText(glyph, x + tileSize / 2, y + tileSize / 2 + 1, tileSize);
-      }
+      drawGrassTile(gctx, x, y, tileSize, h, bucketT);
     }
   }
 
@@ -296,13 +380,106 @@ export function bakeSprites(tileSize: number = TILE_SIZE): SpriteSheet {
 // Carcasses fade continuously rather than stepping through a handful of
 // baked buckets, so (unlike grass/animal glyphs) they're drawn on demand
 // each frame instead of blitted from a pre-baked sheet. Carcass counts are
-// small even during a mass die-off, so per-frame fillText is cheap here.
-export function drawCarcassGlyph(ctx: CanvasRenderingContext2D, tileSize: number, x: number, y: number, color: string): void {
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `bold ${Math.floor(tileSize * 0.85)}px monospace`;
-  ctx.fillStyle = color;
-  ctx.fillText('x', x * tileSize + tileSize / 2, y * tileSize + tileSize / 2 + 1, tileSize);
+// small even during a mass die-off, so per-frame path drawing is cheap here.
+// Each species' fallen silhouette echoes its live shape (rounded vs.
+// leaner+striped, see drawHerbivoreShape/drawTigerShape) so a carcass still
+// reads as "that species" -- rotated onto its side with legs splayed stiffly
+// instead of tucked underneath.
+function drawFallenLegs(ctx: CanvasRenderingContext2D, bw: number, bh: number, r: number, color: string): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = r * 0.14;
+  ctx.lineCap = 'round';
+  for (const t of [-0.55, -0.15, 0.25, 0.6]) {
+    ctx.beginPath();
+    ctx.moveTo(t * bw, bh * 0.95);
+    ctx.lineTo(t * bw + r * 0.22, bh * 1.35);
+    ctx.stroke();
+  }
+}
+
+function drawHerbivoreCarcass(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, t: number): void {
+  const r = size / 2;
+  const bodyColor = lerpColor(CARCASS_FRESH_COLOR, CARCASS_DECAYED_COLOR, t);
+  const limbColor = lerpColor(CARCASS_FRESH_COLOR, CARCASS_DECAYED_COLOR, Math.min(1, t + 0.15));
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(Math.PI / 2); // fallen onto its side
+
+  const bw = r * 0.72;
+  const bh = r * 0.62; // slightly flattened vs. the standing 0.7
+
+  drawFallenLegs(ctx, bw, bh, r, limbColor);
+
+  // ears, flopped flat against the ground instead of upright
+  ctx.fillStyle = limbColor;
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(-bw * 0.7, side * bh * 0.5);
+    ctx.rotate(side * 1.3);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-r * 0.05, -side * r * 0.3);
+    ctx.lineTo(r * 0.2, -side * r * 0.08);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.fillStyle = bodyColor;
+  roundRectPath(ctx, -bw, -bh, bw * 2, bh * 2, r * 0.5);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawCarnivoreCarcass(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, t: number): void {
+  const r = size / 2;
+  const bodyColor = lerpColor(CARCASS_FRESH_COLOR, CARCASS_DECAYED_COLOR, t);
+  const limbColor = lerpColor(CARCASS_FRESH_COLOR, CARCASS_DECAYED_COLOR, Math.min(1, t + 0.15));
+  const stripeColor = lerpColor(STRIPE_COLOR, CARCASS_DECAYED_COLOR, Math.min(1, t * 0.6 + 0.1));
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(Math.PI / 2);
+
+  const bw = r * 0.88;
+  const bh = r * 0.5; // flatter than the standing 0.6
+
+  drawFallenLegs(ctx, bw, bh, r, limbColor);
+
+  ctx.fillStyle = bodyColor;
+  roundRectPath(ctx, -bw, -bh, bw * 2, bh * 2, r * 0.22);
+  ctx.fill();
+
+  ctx.strokeStyle = stripeColor;
+  ctx.lineWidth = r * 0.09;
+  ctx.lineCap = 'round';
+  for (const sOff of [-0.5, -0.1, 0.3]) {
+    ctx.beginPath();
+    ctx.moveTo(sOff * bw, -bh * 0.7);
+    ctx.lineTo(sOff * bw - r * 0.14, bh * 0.7);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// species: 0 = herbivore, 1 = carnivore (CARCASS_SPECIES in sim/carcass.ts).
+// t: 0 = freshly dead, 1 = fully decayed.
+export function drawCarcassSprite(
+  ctx: CanvasRenderingContext2D,
+  tileSize: number,
+  x: number,
+  y: number,
+  species: number,
+  t: number,
+): void {
+  const cx = x * tileSize + tileSize / 2;
+  const cy = y * tileSize + tileSize / 2;
+  const size = tileSize * 0.92;
+  if (species === 1) drawCarnivoreCarcass(ctx, cx, cy, size, t);
+  else drawHerbivoreCarcass(ctx, cx, cy, size, t);
 }
 
 export function grassSpriteRect(sheet: SpriteSheet, colorBucket: number, height: number) {
