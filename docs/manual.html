@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hakoniwa マニュアル</title>
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --fg: #22211f;
+    --muted: #6b6760;
+    --line: #dcd8d0;
+    --panel: #f2efe8;
+    --accent: #2f6f3e;
+    --warn: #9a5b12;
+    --bad: #9b2c2c;
+    --ok: #2f6f3e;
+    --grass: #d9ecd6;
+    --soil: #eadfd1;
+    --herb: #f6e7a8;
+    --carn: #f7d0bd;
+    --carcass: #ecd3d3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1918;
+      --fg: #e8e5df;
+      --muted: #a39e95;
+      --line: #3a3733;
+      --panel: #24221f;
+      --accent: #7cc48a;
+      --warn: #e0a55a;
+      --bad: #e88080;
+      --ok: #7cc48a;
+      --grass: #253a27;
+      --soil: #3a3026;
+      --herb: #423a18;
+      --carn: #45281c;
+      --carcass: #3e2626;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1918; --fg: #e8e5df; --muted: #a39e95; --line: #3a3733; --panel: #24221f;
+    --accent: #7cc48a; --warn: #e0a55a; --bad: #e88080; --ok: #7cc48a;
+    --grass: #253a27; --soil: #3a3026; --herb: #423a18; --carn: #45281c; --carcass: #3e2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.75 system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  }
+  main { max-width: 940px; margin: 0 auto; padding: 32px 16px 96px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: 0.02em; }
+  h2 { font-size: 21px; margin: 56px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  h3 { font-size: 17px; margin: 28px 0 8px; }
+  p { margin: 8px 0; }
+  .lede { color: var(--muted); margin-bottom: 24px; }
+  code { font: 13px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+  pre { background: var(--panel); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font: 13px/1.6 ui-monospace, Consolas, monospace; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 14px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  td.num { font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+  .table-wrap { overflow-x: auto; }
+  nav.toc { background: var(--panel); border-radius: 10px; padding: 12px 18px; margin: 20px 0; }
+  nav.toc ol { margin: 4px 0; padding-left: 22px; }
+  nav.toc a { color: var(--fg); }
+  .callout { border-left: 3px solid var(--accent); background: var(--panel); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .callout.warn { border-left-color: var(--warn); }
+  .tag { display: inline-block; font-size: 12px; padding: 0 7px; border-radius: 10px; border: 1px solid currentColor; white-space: nowrap; }
+  .tag.ok { color: var(--ok); }
+  .tag.obs { color: var(--warn); }
+  .tag.no { color: var(--bad); }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border-radius: 10px; padding: 12px 14px; }
+  .card h4 { margin: 0 0 6px; font-size: 15px; }
+  figure { margin: 16px 0; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  svg text { font-family: system-ui, "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  ol.steps > li { margin-bottom: 6px; }
+  .small { font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>hakoniwa マニュアル</h1>
+<p class="lede">現在の実装が「何を・どういう因果で」動かしているかのモデル。機能追加はまずこの文書の上で位置と受け入れ基準を決め、それからコードに入る。最終更新: 2026-09-24（コミット <code>67bb909</code> 時点）</p>
+
+<div class="callout">
+  <strong>この文書の位置づけ</strong><br>
+  <code>docs/design.md</code> は「こうしたい」というビジョン（多くが仮・未定）。この文書は「今こう動いている」という現実のモデル。数値の正は <code>src/sim/params.ts</code> で、この文書の数値は説明用の写し。コードを変えたら同じコミットでこの文書も直す。
+</div>
+
+<nav class="toc">
+  <strong>目次</strong>
+  <ol>
+    <li><a href="#s1">全体像</a></li>
+    <li><a href="#s2">因果ループ（モデルの本体）</a></li>
+    <li><a href="#s3">1 tick の処理順</a></li>
+    <li><a href="#s4">ライフサイクル仕様</a></li>
+    <li><a href="#s5">表示の仕様</a></li>
+    <li><a href="#s6">アーキテクチャ</a></li>
+    <li><a href="#s7">不変条件と受け入れ基準</a></li>
+    <li><a href="#s8">design.md との差分（未実装）</a></li>
+    <li><a href="#s9">既知の単純化・技術的負債</a></li>
+    <li><a href="#s10">判断の記録</a></li>
+    <li><a href="#s11">開発の進め方</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. 全体像</h2>
+<p>80×45 タイルのトーラス（端がつながった）盤面で、<strong>草・草食獣・肉食獣・死骸・土壌養分</strong>の5つが相互作用するリアルタイムシミュレーション。プレイヤーの介入（神のダイヤル・賭け）はまだ無く、今は「生態系が放っておくとどう振る舞うか」を観察する段階。</p>
+
+<div class="grid2">
+  <div class="card"><h4>時間</h4>1 tick = 500ms。20 tick = 1 エポック（10秒）。エポックは現状カウンタだけで、何も起きない（将来の賭け精算・気候抽選のフック）。</div>
+  <div class="card"><h4>盤面</h4>80×45 = 3,600 タイル。1タイル 16px。上下左右が折り返してつながる。</div>
+  <div class="card"><h4>初期状態</h4>草はほぼ全面に生えた状態から始まり、草食獣150・肉食獣12がランダム配置。乱数シードは起動時刻（UIからの指定は不可）。</div>
+  <div class="card"><h4>典型的な推移</h4>草食獣が爆発的に増える → 草を食べ尽くす／捕食者が増えすぎる → 崩壊 → 生き残りと土壌から回復、の波。絶滅は普通に起きる。</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. 因果ループ（モデルの本体）</h2>
+<p>ストック（箱）とフロー（矢印）。機能追加を考えるときは、まず「どの箱を増やすか／どの矢印を足す・変えるか」をこの図の上で言えるようにする。</p>
+
+<figure>
+<svg viewBox="0 135 760 280" width="100%" role="img" aria-label="因果ループ図">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--fg)"/>
+    </marker>
+  </defs>
+  <style>
+    .box { stroke: var(--fg); stroke-width: 1.4; }
+    .lbl { fill: var(--fg); font-size: 15px; font-weight: 600; }
+    .sub { fill: var(--muted); font-size: 11.5px; }
+    .edge { stroke: var(--fg); stroke-width: 1.4; fill: none; marker-end: url(#arr); }
+    .elbl { fill: var(--fg); font-size: 12.5px; }
+    .elbl2 { fill: var(--muted); font-size: 11px; }
+  </style>
+
+  <!-- stocks -->
+  <rect class="box" x="60" y="150" width="150" height="70" rx="8" style="fill: var(--grass)"/>
+  <text class="lbl" x="135" y="180" text-anchor="middle">草</text>
+  <text class="sub" x="135" y="200" text-anchor="middle">biomass（タイルごと）</text>
+
+  <rect class="box" x="315" y="150" width="150" height="70" rx="8" style="fill: var(--herb)"/>
+  <text class="lbl" x="390" y="180" text-anchor="middle">草食獣 ●</text>
+  <text class="sub" x="390" y="200" text-anchor="middle">hunger / age</text>
+
+  <rect class="box" x="570" y="150" width="150" height="70" rx="8" style="fill: var(--carn)"/>
+  <text class="lbl" x="645" y="180" text-anchor="middle">肉食獣 ▲</text>
+  <text class="sub" x="645" y="200" text-anchor="middle">hunger / age</text>
+
+  <rect class="box" x="60" y="330" width="150" height="70" rx="8" style="fill: var(--soil)"/>
+  <text class="lbl" x="135" y="360" text-anchor="middle">土壌養分</text>
+  <text class="sub" x="135" y="380" text-anchor="middle">fertility（タイルごと）</text>
+
+  <rect class="box" x="440" y="330" width="150" height="70" rx="8" style="fill: var(--carcass)"/>
+  <text class="lbl" x="515" y="360" text-anchor="middle">死骸 x</text>
+  <text class="sub" x="515" y="380" text-anchor="middle">age（10tickで消える）</text>
+
+  <!-- fertility -> grass : growth -->
+  <path class="edge" d="M165,330 L165,224"/>
+  <text class="elbl" x="173" y="282">成長</text>
+  <text class="elbl2" x="173" y="297">1:1で消費</text>
+
+  <!-- grass -> fertility : senescence / spread -->
+  <path class="edge" d="M100,220 L100,326"/>
+  <text class="elbl" x="18" y="268">枯死</text>
+  <text class="elbl" x="18" y="284">散布→隣</text>
+
+  <!-- grass -> herbivore : grazing -->
+  <path class="edge" d="M210,185 L311,185"/>
+  <text class="elbl" x="240" y="176">採食</text>
+
+  <!-- herbivore -> carnivore : predation -->
+  <path class="edge" d="M465,185 L566,185"/>
+  <text class="elbl" x="495" y="176">捕食</text>
+  <text class="elbl2" x="480" y="206">食べられた個体は</text>
+  <text class="elbl2" x="480" y="220">死骸を残さない</text>
+
+  <!-- herbivore -> fertility : excretion -->
+  <path class="edge" d="M345,220 L214,338"/>
+  <text class="elbl" x="318" y="258">排泄</text>
+  <text class="elbl2" x="318" y="273">食べた量×0.5</text>
+
+  <!-- herbivore -> carcass : death -->
+  <path class="edge" d="M415,220 L478,326"/>
+  <text class="elbl" x="452" y="262">餓死・老衰</text>
+
+  <!-- carnivore -> carcass : death -->
+  <path class="edge" d="M640,220 L568,326"/>
+  <text class="elbl" x="612" y="282">餓死・老衰</text>
+
+  <!-- carcass -> fertility : decay -->
+  <path class="edge" d="M440,372 L214,372"/>
+  <text class="elbl" x="270" y="364">分解（遅延）</text>
+  <text class="elbl2" x="270" y="392">10tickかけて少しずつ</text>
+</svg>
+<figcaption>design.md の生命ループのうち、草・草食獣・捕食者・分解者（死骸と土壌養分）までが実装済み。気候ループは未実装。</figcaption>
+</figure>
+
+<h3>このループの性質</h3>
+<ul>
+  <li><strong>草は無から生えない。</strong>成長は必ず同じタイルの土壌養分を1:1で消費する。養分がゼロなら何も起きない。</li>
+  <li><strong>養分の入口は4つ</strong>：枯死（自タイルへ）・散布（隣8タイルへ）・排泄・死骸の分解。前の2つは動物がいなくても働く（遅い）、後の2つは動物由来（速い）。</li>
+  <li><strong>遅延は死骸の分解だけ。</strong>死んでから養分になるまで10 tick。design.md が想定する「草食獣→捕食者の遅延」はまだ無い（捕食の効果は即時）。</li>
+  <li><strong>質量は保存されない。</strong>散布は元のタイルのbiomassを減らさずに養分を生む。死骸はその個体が何を食べたかに関係なく一定量（0.4）を返す。モデルは定性的な因果の再現を目的にしていて、物質収支は合わせていない。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. 1 tick の処理順</h2>
+<p>順番に意味がある。後の段は前の段の結果を見て動く。すべて Worker 内の <code>sim/loop.ts</code> の <code>tick()</code> で実行される。</p>
+<ol class="steps">
+  <li><strong>草</strong> <code>stepGrass</code>
+    <ol>
+      <li>全タイルのbiomassをスナップショット（走査順で結果が偏らないように）</li>
+      <li>biomass &gt; 0 のタイルごとに：自分のbiomassの <code>senescenceRate</code> 分を<strong>減らして</strong>自タイルの養分に足す（枯死）。さらに <code>spreadRate</code> 分を8等分して隣の養分に足す（散布、元は減らない）</li>
+      <li>全タイルで成長：<code>余地 = growthRate × (capacity − biomass)</code>、<code>成長量 = min(余地, 養分)</code>。養分を同量減らす</li>
+    </ol>
+  </li>
+  <li><strong>草食獣</strong> <code>stepHerbivores</code>（配列順に1体ずつ。前の個体が食べた結果を次の個体が見る）</li>
+  <li><strong>肉食獣</strong> <code>stepCarnivores</code>（草食獣が動き終わった後の位置を狙う。この段で食べられた草食獣は段の最後にまとめて除去）</li>
+  <li><strong>死骸</strong> <code>stepCarcasses</code>（全死骸が養分を放出し、10 tick 経ったものを消す）</li>
+  <li><strong>描画差分の計算</strong> <code>deriveHeightAndColor</code>（見た目の段階が変わったタイルだけを返す）</li>
+  <li>エポックの判定（20 tickごとにカウンタを進めるだけ）</li>
+</ol>
+<p class="small">死骸による通行止めは、各段の開始時点に存在する死骸で判定する。草食獣の段で出た死骸は、同じtickの肉食獣の段では通行止めになる。</p>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. ライフサイクル仕様</h2>
+<p>数値は <code>src/sim/params.ts</code> の写し。ここを変えるときは「なぜその値か」を判断の記録（10章）にも残す。</p>
+
+<h3>4.1 ピラミッドの原則</h3>
+<div class="callout">
+  <strong>上の段ほど「少なく・遅く・長生き」。</strong>design.md section 6 の「少産少死」を数値の大小関係で守る。
+  草の再生 ≥ 草食獣の繁殖 ≥ 肉食獣の繁殖、の順を逆転させない。
+</div>
+<div class="table-wrap">
+<table>
+  <tr><th>比較軸</th><th>草食獣</th><th>肉食獣</th><th>向き</th></tr>
+  <tr><td>個体数の上限</td><td class="num">2000</td><td class="num">150</td><td>上の段ほど小さい</td></tr>
+  <tr><td>初期個体数</td><td class="num">150</td><td class="num">12</td><td>上の段ほど小さい</td></tr>
+  <tr><td>繁殖できる空腹度（以下）</td><td class="num">0.15</td><td class="num">0.05</td><td>上の段ほど厳しい</td></tr>
+  <tr><td>繁殖で増える空腹度</td><td class="num">0.3</td><td class="num">0.7</td><td>上の段ほど重い</td></tr>
+  <tr><td>寿命（tick）</td><td class="num">200（約100秒）</td><td class="num">600（約300秒）</td><td>上の段ほど長い</td></tr>
+  <tr><td>空腹の進み（/tick）</td><td class="num">0.05</td><td class="num">0.04</td><td>上の段ほど遅い</td></tr>
+</table>
+</div>
+
+<h3>4.2 草（タイルごとの状態）</h3>
+<div class="table-wrap">
+<table>
+  <tr><th>状態</th><th>意味</th></tr>
+  <tr><td><code>biomass</code> 0〜1</td><td>生えている草の量。背景色と文字の両方を決める</td></tr>
+  <tr><td><code>fertility</code> 0〜1</td><td>土壌養分。成長の唯一の材料。表示されない（design.md の「分解者は表層に出ない」に対応）</td></tr>
+</table>
+<table>
+  <tr><th>パラメータ</th><th>値</th><th>意味</th></tr>
+  <tr><td><code>growthRate</code></td><td class="num">0.03</td><td>capacity までの残りのうち、1 tick で埋められる割合（ただし養分の範囲内）</td></tr>
+  <tr><td><code>capacity</code></td><td class="num">1.0</td><td>biomass の上限</td></tr>
+  <tr><td><code>grazePerBite</code></td><td class="num">0.15</td><td>草食獣の1口で減る量</td></tr>
+  <tr><td><code>spreadRate</code></td><td class="num">0.002</td><td>自分のbiomassのうち、隣8タイルの養分に分ける割合（元は減らない）</td></tr>
+  <tr><td><code>senescenceRate</code></td><td class="num">0.0001</td><td>自分のbiomassのうち、枯れて自タイルの養分に戻る割合（元が減る）</td></tr>
+  <tr><td><code>fertilityCap</code></td><td class="num">1.0</td><td>養分の上限</td></tr>
+</table>
+</div>
+<p><strong>初期値：</strong>biomass は10%のタイルが疎（0.15〜0.25）、10%が密（0.75〜0.95）、残りが0.3〜0.8。fertility は biomass の半分。</p>
+
+<h3>4.3 草食獣 ●</h3>
+<p>状態は <strong>空腹度 <code>hunger</code>（0=満腹〜1=餓死）</strong>と<strong>年齢 <code>age</code></strong>の2つだけ。この2つは独立していて、どちらか一方で死ぬ。蓄えという概念は無く、空腹度は毎tick必ず上がり、食べた時だけ下がる。</p>
+<ol class="steps">
+  <li><strong>移動</strong>：自タイルと隣8タイルのうち、草が一番多いタイルへ1マス動く（死骸のあるタイルは候補から外す。同じ量のときはわずかな乱数で決まり、その場に留まるより隣へ移りやすい）</li>
+  <li><strong>空腹</strong>：<code>hunger += 0.05</code></li>
+  <li><strong>採食</strong>：そのタイルの草が 0.1 を超えていれば最大 0.15 食べ、<code>hunger −= 0.1 × (食べた量 / 0.15)</code>。食べた量の半分をそのタイルの養分に返す（排泄）</li>
+  <li><strong>加齢</strong>：<code>age += 1</code></li>
+  <li><strong>死</strong>：<code>hunger ≥ 1</code>（餓死）または <code>age &gt; 200</code>（老衰）でその場に死骸を残して消える</li>
+  <li><strong>繁殖</strong>：生き残り、かつ <code>hunger ≤ 0.15</code> なら同じタイルに子を1体（子の空腹度 0.5）。親は <code>hunger += 0.3</code>。無性生殖</li>
+</ol>
+<p class="small">収支の目安：毎tick食べ続けられれば空腹度は 0.05 ずつ下がる。2 tick に1回しか食べられないと横ばい、それ以下なら餓死に向かう。飢えだけで死ぬまで最短 20 tick（約1エポック）。</p>
+
+<h3>4.4 肉食獣 ▲</h3>
+<p>草食獣と同じ2つの状態（空腹度・年齢）。違いは餌が「草」ではなく「そのタイルにいる草食獣」であること。</p>
+<ol class="steps">
+  <li><strong>移動</strong>：自タイルと隣8タイルのうち、<strong>まだ誰にも捕まっていない草食獣</strong>が一番多いタイルへ1マス動く（死骸タイルは除外）</li>
+  <li><strong>空腹</strong>：<code>hunger += 0.04</code></li>
+  <li><strong>捕食</strong>：そのタイルに草食獣がいれば1体捕まえて <code>hunger −= 0.3</code>。捕まった草食獣はこのtickの終わりに消え、<strong>死骸は残さない</strong>（養分は捕食者に移る扱い）。1体の獲物を2体の捕食者が取り合うことは無い</li>
+  <li><strong>加齢</strong>：<code>age += 1</code></li>
+  <li><strong>死</strong>：<code>hunger ≥ 1</code> または <code>age &gt; 600</code> でその場に死骸を残して消える</li>
+  <li><strong>繁殖</strong>：<code>hunger ≤ 0.05</code> なら子を1体（子の空腹度 0.5）。親は <code>hunger += 0.7</code></li>
+</ol>
+<p class="small">収支の目安：1回の捕食（−0.3）で約7 tick分の空腹を賄う。繁殖するには捕食を何度も重ねて空腹度を 0.05 以下まで下げる必要がある。</p>
+
+<h3>4.5 死骸 x</h3>
+<div class="table-wrap">
+<table>
+  <tr><th>項目</th><th>値</th><th>仕様</th></tr>
+  <tr><td>発生</td><td></td><td>草食獣・肉食獣が餓死・老衰したタイルに1つ（捕食された個体は残さない）</td></tr>
+  <tr><td><code>CARCASS_PARAMS.fertility</code></td><td class="num">0.4</td><td>1体が分解し終わるまでに返す養分の総量（種によらず一定）</td></tr>
+  <tr><td><code>CARCASS_PARAMS.decayTicks</code></td><td class="num">10</td><td>分解にかかるtick数（約5秒）。毎tick 0.04 ずつ返す</td></tr>
+  <tr><td>通行</td><td></td><td>分解中はそのタイルに誰も移動できない（将来、死骸を食べる種だけ例外にする想定）</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. 表示の仕様</h2>
+<p>1タイルに描くのは1記号。design.md の優先順位（動物 &gt; 植物 &gt; 背景）に従って下から重ねる。</p>
+<div class="table-wrap">
+<table>
+  <tr><th>層</th><th>表現</th><th>意味</th></tr>
+  <tr><td>背景色</td><td>土色 → 緑（8段階）</td><td>草の <strong>量</strong>（biomass）</td></tr>
+  <tr><td>文字</td><td>なし / <code>.</code> / <code>w</code> / <code>W</code></td><td>草の <strong>高さ</strong>（biomass 0.15 / 0.45 / 0.75 で区切る）</td></tr>
+  <tr><td>死骸</td><td><code>x</code>（赤 → 土色に褪せる）</td><td>分解の進み具合</td></tr>
+  <tr><td>草食獣</td><td>● 黄</td><td>design.md：丸 = 植物食</td></tr>
+  <tr><td>肉食獣</td><td>▲ 橙（最前面）</td><td>design.md：三角 = 肉食</td></tr>
+</table>
+</div>
+<p><strong>現状のずれ：</strong>design.md は「背景色=量、文字=構造」を独立した2軸にしたいが、今は両方とも biomass の1変数から決まっていて独立していない。土壌養分（fertility）は画面に出ない。</p>
+<p><strong>部分描画：</strong>毎tick塗り直すのは「見た目の段階が変わった草タイル」＋「前tickか今tickに動物・死骸がいたタイル」だけ。HUDの <code>dirty</code> がその数。</p>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. アーキテクチャ</h2>
+<pre>メインスレッド                               Web Worker
+─────────────────────────                    ──────────────────────────────
+main.ts        HUD・入力・Worker配線          worker/sim.worker.ts
+render/sprites.ts  スプライト焼き込み           setIntervalでtick、SimStateを所有
+render/renderer.ts 差分描画          ◀─ tick ─  sim/loop.ts      tick()の順序を決める
+                                  (差分+個体)   sim/grass.ts     草・土壌養分
+                                               sim/herbivore.ts 草食獣
+                                  ─ pause ─▶   sim/carnivore.ts 肉食獣
+                                               sim/carcass.ts   死骸
+                                               sim/params.ts    全パラメータ（数値の正）
+                                               sim/board.ts     座標・折り返し・近傍</pre>
+<ul>
+  <li><strong>モジュール境界：</strong>草は動物を知らない。草食獣は草を「引数として」受け取って操作する。肉食獣は草食獣を引数として受け取る。上の段が下の段に依存し、逆は無い。気候などを足すときもこの向きを守る。</li>
+  <li><strong>メッセージ：</strong><code>src/types.ts</code> の <code>MainToWorker</code> / <code>WorkerToMain</code>。毎tick、草の差分と各種族の位置が送られる。<code>set-tick-rate</code> は定義済みだがUIは無い。</li>
+  <li><strong>配信：</strong><code>main</code> に push すると GitHub Actions が typecheck・test・build して GitHub Pages に公開（<code>https://msntts.github.io/hakoniwa/</code>）。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. 不変条件と受け入れ基準</h2>
+<p>モデルとして守りたい性質。新しい機能はこれを壊さないこと、壊すならここを書き換える判断を先にすることが受け入れの条件。</p>
+<p class="small">
+  <span class="tag ok">テスト</span> 単体テストで担保 ／
+  <span class="tag obs">実機</span> ブラウザで観察して確認（再現性は保証されない） ／
+  <span class="tag no">未確認</span> まだ確認していない、または変更後に再確認していない
+</p>
+<div class="table-wrap">
+<table>
+  <tr><th>ID</th><th>性質</th><th>状態</th><th>根拠</th></tr>
+  <tr><td>INV-01</td><td>草は養分が無いタイルでは成長しない</td><td><span class="tag ok">テスト</span></td><td><code>grass.test.ts</code></td></tr>
+  <tr><td>INV-02</td><td>成長は養分を1:1で消費する</td><td><span class="tag ok">テスト</span></td><td><code>grass.test.ts</code></td></tr>
+  <tr><td>INV-03</td><td>草も枯れる（満タンのタイルでもbiomassが少し減り、同量が養分になる）</td><td><span class="tag ok">テスト</span></td><td><code>grass.test.ts</code></td></tr>
+  <tr><td>INV-04</td><td>茂った草の隣は、孤立したタイルより早く回復する</td><td><span class="tag ok">テスト</span></td><td><code>grass.test.ts</code></td></tr>
+  <tr><td>INV-05</td><td>動物は空腹度1で餓死、寿命超過で老衰。どちらも年齢・空腹度の片方だけで起きる</td><td><span class="tag ok">テスト</span></td><td><code>herbivore.test.ts</code> <code>carnivore.test.ts</code></td></tr>
+  <tr><td>INV-06</td><td>繁殖は「今」満腹なときだけ（過去の蓄えでは繁殖できない）</td><td><span class="tag ok">テスト</span></td><td>同上</td></tr>
+  <tr><td>INV-07</td><td>自然死した個体は死骸を残し、養分は即時でなく10 tickかけて戻る</td><td><span class="tag ok">テスト</span></td><td><code>carcass.test.ts</code> ほか</td></tr>
+  <tr><td>INV-08</td><td>死骸のあるタイルには移動できない</td><td><span class="tag ok">テスト</span></td><td>両種族のテスト</td></tr>
+  <tr><td>INV-09</td><td>1体の草食獣は1 tickに1体の捕食者にしか食べられない</td><td><span class="tag ok">テスト</span></td><td><code>carnivore.test.ts</code></td></tr>
+  <tr><td>INV-10</td><td>ピラミッドの順序（4.1の表）が逆転していない</td><td><span class="tag no">未確認</span></td><td>パラメータの大小で担保しているだけ。テスト化の候補</td></tr>
+  <tr><td>INV-11</td><td>放っておくと絶滅が起こりうる（安定した均衡に張り付かない）</td><td><span class="tag obs">実機</span></td><td>草食獣のみの構成で確認。肉食獣追加後は捕食者の絶滅を確認</td></tr>
+  <tr><td>INV-12</td><td>動物が全滅しても、時間をかけて盤面全体が回復する（凍りつかない）</td><td><span class="tag no">未確認</span></td><td>約2500 tickで全面回復を確認済みだが、その後「枯死でbiomassが減る」変更と肉食獣の追加が入った</td></tr>
+  <tr><td>INV-13</td><td>捕食者の数は被食者より十分少ない</td><td><span class="tag no">未確認</span></td><td>ピーク時に 127 対 1373 を確認。ただし崩壊直前に 146 対 144 とほぼ同数になった局面あり。目標であって現状は保証されない</td></tr>
+  <tr><td>INV-14</td><td>毎tickの塗り直しは盤面全体より少ない</td><td><span class="tag obs">実機</span></td><td>HUDの <code>dirty</code></td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. design.md との差分（未実装）</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>design.md の要素</th><th>現状</th></tr>
+  <tr><td>神のダイヤル（平均・分散・相関・裾を操作）、賭け、オッズ表示、早期切り上げ</td><td>未実装。プレイヤーは一時停止しかできない</td></tr>
+  <tr><td>スコア（食物連鎖ピラミッドの段数）</td><td>未実装</td></tr>
+  <tr><td>気候ループ（大気の水分・降水・地表の水・蒸発）と気温</td><td>未実装。草の成長に水の要素が無い</td></tr>
+  <tr><td>気候と生命の接続（降水→草、分解者→保水）</td><td>未実装</td></tr>
+  <tr><td>分解者レイヤーの表示切り替え</td><td>未実装。土壌養分は画面に出ない</td></tr>
+  <tr><td>草食獣→捕食者の「餌+、遅延」</td><td>捕食の効果は即時。遅延は死骸の分解だけ</td></tr>
+  <tr><td>背景色（量）と文字（構造）の独立</td><td>両方 biomass から決まる</td></tr>
+  <tr><td>倍速・事後ログ</td><td>プロトコルに <code>set-tick-rate</code> があるだけ</td></tr>
+  <tr><td>種の形質（体格・生息層・耐性）、進化、形質による捕食関係の導出</td><td>未実装。2種は固定</td></tr>
+  <tr><td>海と陸、繋ぎ役の種</td><td>未実装</td></tr>
+  <tr><td>保存（localStorage / IndexedDB）、図鑑</td><td>未実装</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. 既知の単純化・技術的負債</h2>
+<ul>
+  <li><strong>処理順の偏り：</strong>個体は配列順に1体ずつ処理され、前の個体の結果を後の個体が見る。配列の前の方の個体がやや有利。</li>
+  <li><strong>草食獣は逃げない。</strong>捕食者の位置を見ずに草だけを追う。捕食は隣接すれば必ず成功する。</li>
+  <li><strong>視野は隣1マスだけ。</strong><code>HERBIVORE_PARAMS.visionRadius</code> は定義されているが使われていない。</li>
+  <li><strong>無性生殖。</strong>検討の上、現段階では雌雄を入れないと判断（10章）。</li>
+  <li><strong>質量非保存</strong>（2章）。散布と死骸が、実質的な外部からの養分流入になっている。</li>
+  <li><strong>長時間の検証手段が無い。</strong>回復のような数千tickの挙動は、<code>DEFAULT_TICK_MS</code> を一時的に 20 に書き換えて早送りして確認している。倍速UIか、ヘッドレスで回す検証スクリプトがあると良い。</li>
+  <li><strong>乱数シードを固定できない。</strong>同じ条件の再現・比較ができない。</li>
+  <li><strong>1回の観察に依存した調整がある。</strong>実機確認の多くは1回の試行。シードによって結果が変わりうる。</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. 判断の記録</h2>
+<p>同じ議論を繰り返さないための記録。新しい順。</p>
+<div class="table-wrap">
+<table>
+  <tr><th>判断</th><th>理由・経緯</th></tr>
+  <tr><td>肉食獣の繁殖条件を大幅に厳しくし、上限を500→150に</td><td>最初の設定（捕食1回で −0.5）では捕食者391 対 草食獣9と、捕食者が40倍に増えた。ピラミッドが逆転していた</td></tr>
+  <tr><td>捕食された個体は死骸を残さない</td><td>体は捕食者に移る扱い。自然死だけが死骸として分解者に回る（design.md の「死骸 ← 捕食者」の矢印に対応）</td></tr>
+  <tr><td>死骸のパラメータを種共通の <code>CARCASS_PARAMS</code> に</td><td>体は種によらず体。種ごとに変える必要が出たら分ける</td></tr>
+  <tr><td>枯死（senescence）でbiomass自体も減らす</td><td>「草も死ぬべき、代謝があるべき」。養分を還元するだけだと、満タンの草が無限の泉になっていた</td></tr>
+  <tr><td>spreadRate 0.05 → 0.002、senescenceRate 0.01 → 0.0001</td><td>動物に依存しない養分の入口が強すぎて、草食獣が400〜480頭で均衡し絶滅しなくなった。切り分けると主犯は spreadRate。弱めても、全滅後の全面回復は約2500 tickで起きることを確認</td></tr>
+  <tr><td>枯死による養分還元を追加</td><td>養分の入口が動物由来だけだと、全滅した瞬間の状態で盤面が凍りつく</td></tr>
+  <tr><td>無性生殖のまま（雌雄は入れない）</td><td>design.md の繁殖仕様も「産む数と条件」のみ。雌雄は相手探しや性比の崩壊という大きな仕組みを持ち込むので、現段階では見送り</td></tr>
+  <tr><td>草の広がりを「成長ポテンシャルへの加算」から「隣への養分の受け渡し」に</td><td>加算方式は、結局そのタイル自身の養分が無いと効かず、体感できなかった</td></tr>
+  <tr><td>死骸を見える物体にし、分解中は通行不可に</td><td>死 → 分解 → 養分 → 草、という因果ループを画面上で見えるようにするため</td></tr>
+  <tr><td>土壌養分（fertility）を導入</td><td>草が無条件に回復していたので、食べ尽くしても何もない土地から生え、絶滅しなかった</td></tr>
+  <tr><td>energy を hunger（空腹度）と age（年齢）に分離</td><td>energy は餓死判定と繁殖の燃料を兼ねていて、過去の蓄えで長く生き延び・繁殖できてしまった</td></tr>
+  <tr><td>grazeHungerRelief 0.25 → 0.1</td><td>たまに1口食べれば繁殖し続けられる抜け穴になっていた</td></tr>
+  <tr><td>寿命 2000 → 200 tick</td><td>老衰が実質起きず、多産多死になっていなかった</td></tr>
+  <tr><td><strong>却下：</strong>密集によるペナルティ死</td><td>「密集しているから死ぬ」は論理の飛躍。増えすぎた結果は餌不足による餓死で表現する</td></tr>
+  <tr><td>タイル 12px → 16px</td><td>12pxでは <code>W</code> などの文字が潰れて読めなかった</td></tr>
+  <tr><td>Web Worker を最初から採用</td><td>design.md の方針。倍速を入れるときに効く</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s11">11. 開発の進め方</h2>
+<p>このマニュアルをモデルとして扱う。依頼を受けたら、コードより先にこの文書の上で考える。</p>
+<ol class="steps">
+  <li><strong>位置を決める：</strong>2章の因果ループで、どの箱（ストック）を足すのか、どの矢印（フロー）を足す・変えるのかを言葉にする。3章の処理順のどこに入るかも決める。</li>
+  <li><strong>影響を洗う：</strong>7章の不変条件のどれに影響するか。4.1のピラミッドの順序を崩さないか。10章で過去に却下・決着した案の蒸し返しになっていないか。8章の未実装項目との関係。</li>
+  <li><strong>受け入れ基準を先に書く：</strong>「何が観察できたら完成か」を、単体テストで確かめられるもの（ミクロ）と、実機で観察するもの（マクロな挙動）に分けて書く。モデルが変わるなら、実装前にマニュアルの変更案をユーザーと合意する。</li>
+  <li><strong>実装：</strong>6章のモジュール境界を守る。数値は <code>params.ts</code> に置き、理由をコメントに書く。</li>
+  <li><strong>検証：</strong><code>npm run typecheck</code>、<code>npm run test</code>、ブラウザで観察。長時間の挙動は早送りで確認する。</li>
+  <li><strong>マニュアルを更新：</strong>同じコミットで、モデル図・処理順・パラメータ表・不変条件の状態・判断の記録を直す。確認していないものを「確認済み」にしない。</li>
+</ol>
+
+<h3>受け入れ基準の書き方（テンプレート）</h3>
+<pre>機能: （例）草食獣が捕食者から逃げる
+因果ループ上の位置: 肉食獣 → 草食獣 に「回避 −」の矢印を追加。処理順は草食獣の移動
+影響する不変条件: INV-09（変わらない）、INV-13（改善を期待）、INV-11（絶滅しにくくなる恐れ）
+ミクロ（テスト）:   隣に捕食者がいて草が同量なら、捕食者から離れる方を選ぶ
+マクロ（実機）:     捕食者がいる初期条件で、捕食者・草食獣とも絶滅しうることを保ったまま、
+                    ピーク時の捕食者:草食獣の比が 1:5 より小さい
+判断の記録に残すこと: 回避の強さの決め方</pre>
+
+<p class="small">この文書が大きくなりすぎたら、ライフサイクル仕様（4章）を別ファイルに切り出す。</p>
+
+</main>
+</body>
+</html>
