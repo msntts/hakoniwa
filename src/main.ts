@@ -1,5 +1,5 @@
 import { bakeSprites } from './render/sprites';
-import { applyTick, createRenderer, paintInit } from './render/renderer';
+import { applyTick, createRenderer, paintInit, startOverlayAnimation } from './render/renderer';
 import { BOARD_HEIGHT, BOARD_WIDTH, DEFAULT_EPOCH_MS, DEFAULT_TICK_MS, TILE_SIZE } from './types';
 import type { WorkerToMain } from './types';
 
@@ -34,6 +34,7 @@ worker.onmessage = (ev: MessageEvent<WorkerToMain>) => {
       break;
     case 'init-done':
       paintInit(renderer, msg.grass, msg.herbivores, msg.carnivores, msg.carcasses);
+      startOverlayAnimation(renderer);
       hudPop.textContent = `herbivores: ${msg.herbivores.count} / carnivores: ${msg.carnivores.count}`;
       worker.postMessage({ type: 'start' });
       break;
