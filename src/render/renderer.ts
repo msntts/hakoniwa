@@ -339,11 +339,22 @@ function drawAnimatedHerbivores(
 // predator. Shown for exactly the tick the carnivore spends stationary
 // digesting (carnEating[k], see computeGlide), fading and shrinking across
 // that tick's progress so it reads as being consumed, not just deleted.
-function drawPreyGhost(ctx: CanvasRenderingContext2D, sheet: SpriteSheet, ix: number, iy: number, progress: number): void {
+//
+// Drawn trailing *behind* the predator (opposite its facing), not dead
+// center under it: both sprites fill most of a tile, so a same-tile,
+// same-size ghost drawn first ended up completely hidden under the
+// predator's own opaque body for the entire bite -- there was never
+// actually anything visible to read as "being eaten" (confirmed with a
+// debug capture in the browser: no trace of the ghost at any point in an
+// eating tick). Offsetting it toward the tile the predator approached from
+// keeps it looking pinned to the kill while actually showing its shrinking
+// silhouette instead of a bite animation with nothing underneath it.
+function drawPreyGhost(ctx: CanvasRenderingContext2D, sheet: SpriteSheet, ix: number, iy: number, progress: number, facing: number): void {
   const rect = animalSpriteRect(sheet, 0, 2);
   const size = sheet.tileSize;
-  const cx = ix * size + size / 2;
-  const cy = iy * size + size / 2;
+  const trail = -facing * size * 0.5;
+  const cx = ix * size + size / 2 + trail;
+  const cy = iy * size + size / 2 + size * 0.12;
   const scale = 1 - progress * 0.6;
   ctx.save();
   ctx.globalAlpha = Math.max(0, 1 - progress);
@@ -370,13 +381,13 @@ function drawAnimatedCarnivores(
     const iy = interpAxis(fromY[k], toY, r.height, progress);
     const bucket = hungerToBucket(carnivores.hunger[k] ?? 0);
     const isEating = eating[k] === 1;
-    if (isEating) drawPreyGhost(r.ctx, r.sheet, ix, iy, progress);
+    const facing = r.carnFacing[k] ?? 1;
+    if (isEating) drawPreyGhost(r.ctx, r.sheet, ix, iy, progress, facing);
     // Bite loop plays exactly while this individual is sitting on its kill
     // (see the eating[k] doc comment above) -- previously there was no such
     // signal at all, so carnivores never showed a visible bite.
     const frame = pickAnimalFrame(baseFrame + k * 3, isEating);
     const rect = animalSpriteRect(r.sheet, frame, bucket);
-    const facing = r.carnFacing[k] ?? 1;
     drawFacingSprite(r.ctx, r.sheet.carnivoreCanvas, rect, ix * r.sheet.tileSize, iy * r.sheet.tileSize, r.sheet.tileSize, facing);
   }
 }
