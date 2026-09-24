@@ -78,7 +78,21 @@ export const HERBIVORE_PARAMS = {
   // to reproHungerThreshold -- confirmed by tracing hunger over 20 ticks with
   // unlimited grass. Freezing it instead keeps the same downward trend as
   // before, just at half speed in tick-count.
-  restTicksAfterEating: 1,
+  //
+  // Raised from 1 to 2 to thin out how often the herd is visibly chewing --
+  // only safe to touch once render/renderer.ts's computeGlide stopped
+  // treating the *entire* rest period as one long bite (it used to show the
+  // chewing loop for every rest>0 tick, so raising this alone used to make
+  // the herd look like it was eating *more*, not less; see docs/manual.html
+  // section 10). With that fixed, the fraction of the herd showing the bite
+  // animation on a given tick (measured over 1000 ticks x 3 seeds, 80x45
+  // board) drops from ~39% at 1 to ~28% at 2; 3 and 4 push it lower still
+  // (~21%, ~17%) but routinely ran the herd up against `capacity` (2000) in
+  // the same trace, an artificial ceiling this value wasn't tuned against.
+  // Picked 2 as the smaller, safer step -- herd survival across all 3 seeds
+  // was comparable to the rest=1 baseline (no new extinctions), and none of
+  // them clamped at capacity.
+  restTicksAfterEating: 2,
 
   // 排泄 (while alive) ties "ate here" to "something can grow here again
   // later" -- on top of the slower, animal-independent senescence trickle
