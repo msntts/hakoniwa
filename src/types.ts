@@ -22,6 +22,11 @@ export interface HerbivoreSnapshot {
   // previous-tick position for glide/facing (index alone breaks across a
   // same-tick death's swap-remove).
   id: Uint32Array;
+  // Ticks left resting after a bite (see HerbivoreState.rest) -- >0 is the
+  // renderer's only signal that this individual is actually eating right
+  // now, as opposed to just walking; it picks the bite animation over the
+  // idle walk cycle on that basis (render/sprites.ts).
+  rest: Uint8Array;
   count: number;
 }
 
@@ -32,6 +37,7 @@ export interface CarnivoreSnapshot {
   y: Int16Array;
   hunger: Float32Array;
   id: Uint32Array;
+  rest: Uint8Array;
   count: number;
 }
 

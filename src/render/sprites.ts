@@ -148,6 +148,22 @@ export function hungerToBucket(hunger: number): number {
   return Math.round(clamped * (ANIMAL_HUNGER_BUCKETS - 1));
 }
 
+// The 8 baked frames split into two loops: a calm walk/idle cycle and a
+// distinct, more pronounced bite cycle (see HERBIVORE_POSES/TIGER_POSES
+// below). The renderer picks which loop to play per individual per frame
+// from HerbivoreState.rest/CarnivoreState.rest (>0 means "resting off a bite
+// this tick" -- see sim/herbivore.ts, sim/carnivore.ts) instead of always
+// playing the walk loop -- that used to be the only loop, so mouth motion
+// was constant regardless of whether the individual had actually just eaten,
+// which is exactly what made eating unreadable before this existed.
+const WALK_FRAME_COUNT = 5;
+const BITE_FRAME_COUNT = ANIMAL_ANIM_FRAMES - WALK_FRAME_COUNT;
+
+export function pickAnimalFrame(counter: number, eating: boolean): number {
+  if (eating) return WALK_FRAME_COUNT + (((counter % BITE_FRAME_COUNT) + BITE_FRAME_COUNT) % BITE_FRAME_COUNT);
+  return ((counter % WALK_FRAME_COUNT) + WALK_FRAME_COUNT) % WALK_FRAME_COUNT;
+}
+
 interface Pose {
   bob: number;
   squash: number;
@@ -297,30 +313,36 @@ function drawTigerShape(ctx: CanvasRenderingContext2D, cx: number, cy: number, s
   ctx.restore();
 }
 
-// Herbivores are almost always foraging in this sim, so the ambient loop
-// bakes in one visible nibble per cycle. Carnivores only actually bite on a
-// predation event we don't get a signal for (see renderer.ts), so their loop
-// stays a subtler idle/alert posture rather than faking a constant chomp.
+// Frames 0..WALK_FRAME_COUNT-1: calm walk/idle loop -- mouth stays nearly
+// closed, only a light bob/ear twitch, since this individual isn't actually
+// eating right now. Frames WALK_FRAME_COUNT..: bite loop -- a pronounced,
+// unmistakable chomp, played only while HerbivoreState.rest is counting down
+// (i.e. exactly the tick(s) it's actually eating). See pickAnimalFrame above.
 const HERBIVORE_POSES: readonly Pose[] = [
-  { bob: 0.0, squash: 0.0, earAngle: 0.0, mouthOpen: 0.06 },
-  { bob: 0.02, squash: 0.0, earAngle: 0.04, mouthOpen: 0.06 },
-  { bob: 0.03, squash: 0.0, earAngle: 0.08, mouthOpen: 0.08 },
-  { bob: 0.02, squash: 0.05, earAngle: 0.04, mouthOpen: 0.3 },
-  { bob: -0.01, squash: 0.12, earAngle: -0.02, mouthOpen: 0.55 },
-  { bob: 0.0, squash: 0.05, earAngle: 0.02, mouthOpen: 0.3 },
-  { bob: 0.02, squash: 0.0, earAngle: 0.06, mouthOpen: 0.08 },
-  { bob: 0.01, squash: 0.0, earAngle: 0.02, mouthOpen: 0.06 },
+  { bob: 0.0, squash: 0.0, earAngle: 0.0, mouthOpen: 0.03 },
+  { bob: 0.02, squash: 0.0, earAngle: 0.04, mouthOpen: 0.04 },
+  { bob: 0.03, squash: 0.0, earAngle: 0.08, mouthOpen: 0.04 },
+  { bob: 0.02, squash: 0.0, earAngle: 0.04, mouthOpen: 0.03 },
+  { bob: 0.01, squash: 0.0, earAngle: 0.0, mouthOpen: 0.03 },
+  { bob: 0.02, squash: 0.06, earAngle: 0.08, mouthOpen: 0.35 },
+  { bob: -0.02, squash: 0.16, earAngle: -0.04, mouthOpen: 0.65 },
+  { bob: 0.0, squash: 0.06, earAngle: 0.06, mouthOpen: 0.3 },
 ];
 
+// Same split as HERBIVORE_POSES. The walk loop stays subtle (an apex
+// predator on the prowl doesn't chomp while walking), but the bite loop is
+// now a real, deliberate snap -- wide open then shut -- shown exactly on a
+// successful kill (CarnivoreState.rest counting down), where previously
+// there was no bite motion at all because there was no signal to trigger one.
 const TIGER_POSES: readonly Pose[] = [
-  { bob: 0.0, squash: 0.0, earAngle: 0.0, mouthOpen: 0.04 },
-  { bob: 0.015, squash: 0.0, earAngle: 0.05, mouthOpen: 0.04 },
-  { bob: 0.02, squash: 0.0, earAngle: 0.1, mouthOpen: 0.05 },
-  { bob: 0.01, squash: -0.03, earAngle: 0.05, mouthOpen: 0.08 },
-  { bob: -0.01, squash: 0.04, earAngle: -0.05, mouthOpen: 0.12 },
-  { bob: 0.0, squash: 0.0, earAngle: -0.02, mouthOpen: 0.06 },
-  { bob: 0.015, squash: 0.0, earAngle: 0.03, mouthOpen: 0.05 },
-  { bob: 0.01, squash: 0.0, earAngle: 0.01, mouthOpen: 0.04 },
+  { bob: 0.0, squash: 0.0, earAngle: 0.0, mouthOpen: 0.03 },
+  { bob: 0.015, squash: 0.0, earAngle: 0.05, mouthOpen: 0.03 },
+  { bob: 0.02, squash: 0.0, earAngle: 0.1, mouthOpen: 0.04 },
+  { bob: 0.01, squash: 0.0, earAngle: 0.03, mouthOpen: 0.03 },
+  { bob: 0.005, squash: 0.0, earAngle: -0.02, mouthOpen: 0.03 },
+  { bob: 0.02, squash: -0.08, earAngle: 0.1, mouthOpen: 0.55 },
+  { bob: -0.04, squash: 0.14, earAngle: -0.1, mouthOpen: 0.9 },
+  { bob: 0.0, squash: 0.02, earAngle: 0.02, mouthOpen: 0.35 },
 ];
 
 function bakeAnimalSheet(
@@ -383,8 +405,13 @@ export function bakeSprites(tileSize: number = TILE_SIZE): SpriteSheet {
 // small even during a mass die-off, so per-frame path drawing is cheap here.
 // Each species' fallen silhouette echoes its live shape (rounded vs.
 // leaner+striped, see drawHerbivoreShape/drawTigerShape) so a carcass still
-// reads as "that species" -- rotated onto its side with legs splayed stiffly
-// instead of tucked underneath.
+// reads as "that species", with legs splayed stiffly instead of tucked
+// underneath. Kept in the same horizontal orientation as the live sprite --
+// an earlier version rotated the whole body 90° to suggest "fallen onto its
+// side", but in this top-down view that just turns the body's long axis
+// vertical, which reads as the animal standing up on end, not lying down.
+// Splayed legs + flopped ears + the color fade to soil already say "fallen"
+// without needing a rotation that fights the top-down perspective.
 function drawFallenLegs(ctx: CanvasRenderingContext2D, bw: number, bh: number, r: number, color: string): void {
   ctx.strokeStyle = color;
   ctx.lineWidth = r * 0.14;
@@ -404,23 +431,24 @@ function drawHerbivoreCarcass(ctx: CanvasRenderingContext2D, cx: number, cy: num
 
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(Math.PI / 2); // fallen onto its side
 
   const bw = r * 0.72;
   const bh = r * 0.62; // slightly flattened vs. the standing 0.7
 
   drawFallenLegs(ctx, bw, bh, r, limbColor);
 
-  // ears, flopped flat against the ground instead of upright
+  // ears, flopped flat against the ground instead of upright -- same
+  // attachment point as the live pose (see drawHerbivoreShape), just rotated
+  // further down so they lie against the head instead of standing up.
   ctx.fillStyle = limbColor;
   for (const side of [-1, 1]) {
     ctx.save();
-    ctx.translate(-bw * 0.7, side * bh * 0.5);
-    ctx.rotate(side * 1.3);
+    ctx.translate(-bw * 0.7, side * bh * 0.95);
+    ctx.rotate(side * 1.4);
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.lineTo(-r * 0.05, -side * r * 0.3);
-    ctx.lineTo(r * 0.2, -side * r * 0.08);
+    ctx.lineTo(-r * 0.05, -side * r * 0.34);
+    ctx.lineTo(r * 0.22, -side * r * 0.1);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -441,7 +469,6 @@ function drawCarnivoreCarcass(ctx: CanvasRenderingContext2D, cx: number, cy: num
 
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(Math.PI / 2);
 
   const bw = r * 0.88;
   const bh = r * 0.5; // flatter than the standing 0.6
