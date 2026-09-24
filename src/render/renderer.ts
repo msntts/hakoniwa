@@ -1,4 +1,4 @@
-import { CARCASS_PARAMS } from '../sim/params';
+import { CARCASS_PARAMS, CARNIVORE_PARAMS, HERBIVORE_PARAMS } from '../sim/params';
 import type { CarcassSnapshot, CarnivoreSnapshot, DirtyTile, HerbivoreSnapshot } from '../types';
 import {
   animalSpriteRect,
@@ -217,6 +217,16 @@ function interpAxis(fromV: number | undefined, toV: number, max: number, progres
 // *following* tick, whose own incoming rest has already ticked back down.
 // Shifting the read by one tick this way makes the bite/being-eaten visuals
 // land on the tick where the individual is actually stationary.
+//
+// Within that, `eating` only fires on the *first* such tick (prev.rest ===
+// maxRest, the value a fresh bite sets it to), not for every tick the
+// individual has rest > 0. With restTicksAfterEating at 1 today the two are
+// the same thing, but they diverge the moment that's raised above 1: without
+// this distinction, a longer rest reads as a longer *bite* (mouth
+// open/closing every one of those ticks), which is backwards -- only the
+// tick right after landing the bite is actually chewing; the remaining rest
+// ticks are just standing still, already fed, and should fall back to the
+// (mouth-closed) walk loop like any other stationary tick.
 export function computeGlide(
   ids: Uint32Array,
   toX: Int16Array,
@@ -225,6 +235,7 @@ export function computeGlide(
   count: number,
   prevById: Map<number, GlideEntry>,
   boardWidth: number,
+  maxRest: number,
 ): {
   fromX: Array<number | undefined>;
   fromY: Array<number | undefined>;
@@ -248,7 +259,7 @@ export function computeGlide(
       fromX[k] = prev.x;
       fromY[k] = prev.y;
       f = facingFromDelta(tx, prev.x, boardWidth, prev.facing);
-      eating[k] = prev.rest > 0 ? 1 : 0;
+      eating[k] = prev.rest === maxRest ? 1 : 0;
     }
     facing[k] = f;
     nextById.set(id, { x: tx, y: ty, facing: f, rest: tr });
@@ -492,8 +503,8 @@ export function paintInit(
   // No previous-tick positions yet, so everything appears at rest (no glide),
   // faces right, and shows no bite -- computeGlide does all three on its own
   // when prevById is empty.
-  const herbGlide = computeGlide(herbivores.id, herbivores.x, herbivores.y, herbivores.rest, herbivores.count, new Map(), r.width);
-  const carnGlide = computeGlide(carnivores.id, carnivores.x, carnivores.y, carnivores.rest, carnivores.count, new Map(), r.width);
+  const herbGlide = computeGlide(herbivores.id, herbivores.x, herbivores.y, herbivores.rest, herbivores.count, new Map(), r.width, HERBIVORE_PARAMS.restTicksAfterEating);
+  const carnGlide = computeGlide(carnivores.id, carnivores.x, carnivores.y, carnivores.rest, carnivores.count, new Map(), r.width, CARNIVORE_PARAMS.restTicksAfterEating);
   r.herbFromX = herbGlide.fromX;
   r.herbFromY = herbGlide.fromY;
   r.herbFacing = herbGlide.facing;
@@ -532,8 +543,8 @@ export function applyTick(
   // comment for why that distinction is the whole point), so this glide
   // always starts from where *that same animal* actually was, even if a
   // same-tick death elsewhere reshuffled the array via swap-remove.
-  const herbGlide = computeGlide(herbivores.id, herbivores.x, herbivores.y, herbivores.rest, herbivores.count, r.herbPrevById, r.width);
-  const carnGlide = computeGlide(carnivores.id, carnivores.x, carnivores.y, carnivores.rest, carnivores.count, r.carnPrevById, r.width);
+  const herbGlide = computeGlide(herbivores.id, herbivores.x, herbivores.y, herbivores.rest, herbivores.count, r.herbPrevById, r.width, HERBIVORE_PARAMS.restTicksAfterEating);
+  const carnGlide = computeGlide(carnivores.id, carnivores.x, carnivores.y, carnivores.rest, carnivores.count, r.carnPrevById, r.width, CARNIVORE_PARAMS.restTicksAfterEating);
   r.herbFromX = herbGlide.fromX;
   r.herbFromY = herbGlide.fromY;
   r.herbFacing = herbGlide.facing;

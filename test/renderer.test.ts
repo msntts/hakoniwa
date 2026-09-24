@@ -23,7 +23,7 @@ describe('computeGlide', () => {
     const toX = new Int16Array([71, 7]);
     const toY = new Int16Array([40, 5]);
 
-    const { fromX, fromY } = computeGlide(ids, toX, toY, noRest, 2, prevById, boardWidth);
+    const { fromX, fromY } = computeGlide(ids, toX, toY, noRest, 2, prevById, boardWidth, 1);
 
     // id=2's glide must start from its OWN previous position (70,40), not
     // from index 0's previous occupant id=0's position (5,5) -- the latter
@@ -43,7 +43,7 @@ describe('computeGlide', () => {
     const toX = new Int16Array([10]);
     const toY = new Int16Array([10]);
 
-    const { fromX, fromY, facing, eating } = computeGlide(ids, toX, toY, noRest, 1, prevById, boardWidth);
+    const { fromX, fromY, facing, eating } = computeGlide(ids, toX, toY, noRest, 1, prevById, boardWidth, 1);
 
     expect(fromX[0]).toBeUndefined();
     expect(fromY[0]).toBeUndefined();
@@ -60,7 +60,7 @@ describe('computeGlide', () => {
     const toX = new Int16Array([71, 4]); // id=2 moved right; id=0 continues moving left
     const toY = new Int16Array([40, 5]);
 
-    const { facing } = computeGlide(ids, toX, toY, noRest, 2, prevById, boardWidth);
+    const { facing } = computeGlide(ids, toX, toY, noRest, 2, prevById, boardWidth, 1);
 
     expect(facing[0]).toBe(1); // id=2: 70 -> 71, moved right
     expect(facing[1]).toBe(-1); // id=0: 5 -> 4, moved left
@@ -81,11 +81,38 @@ describe('computeGlide', () => {
     const toY = new Int16Array([5, 5]);
     const rest = new Uint8Array([0, 1]); // id=1 just finished resting; id=2 just landed a bite
 
-    const { eating, nextById } = computeGlide(ids, toX, toY, rest, 2, prevById, boardWidth);
+    const { eating, nextById } = computeGlide(ids, toX, toY, rest, 2, prevById, boardWidth, 1);
 
     expect(eating[0]).toBe(1); // id=1: eating now (stationary this tick), because it *was* resting
     expect(eating[1]).toBe(0); // id=2: not eating yet -- still mid-walk toward the tile it just bit
     expect(nextById.get(1)?.rest).toBe(0);
     expect(nextById.get(2)?.rest).toBe(1);
+  });
+
+  it('only flags eating on the first tick of a multi-tick rest, not the whole rest period', () => {
+    // restTicksAfterEating > 1: the individual sits still for several ticks
+    // after a bite, but only the first of those ticks is actually chewing --
+    // the rest is just standing there already fed. Simulate a bite that set
+    // rest=3, then two further ticks of it counting down.
+    const maxRest = 3;
+    const prevById = new Map<number, GlideEntry>([
+      [1, { x: 5, y: 5, facing: 1, rest: maxRest }], // just bit last tick -- this tick is the chew
+    ]);
+    const ids = new Uint32Array([1]);
+    const toX = new Int16Array([5]);
+    const toY = new Int16Array([5]);
+
+    // Tick where it's freshly digesting (prev.rest === maxRest): chewing.
+    const first = computeGlide(ids, toX, toY, new Uint8Array([2]), 1, prevById, boardWidth, maxRest);
+    expect(first.eating[0]).toBe(1);
+
+    // Next tick: prev.rest is now 2 (< maxRest) -- still resting, but no
+    // longer the bite tick, so it falls back to the idle/walk loop.
+    const second = computeGlide(ids, toX, toY, new Uint8Array([1]), 1, first.nextById, boardWidth, maxRest);
+    expect(second.eating[0]).toBe(0);
+
+    // And the tick after that (prev.rest === 1, still < maxRest): also idle.
+    const third = computeGlide(ids, toX, toY, new Uint8Array([0]), 1, second.nextById, boardWidth, maxRest);
+    expect(third.eating[0]).toBe(0);
   });
 });
