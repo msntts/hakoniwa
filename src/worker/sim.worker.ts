@@ -15,6 +15,7 @@ function herdSnapshot(s: SimState): HerbivoreSnapshot {
     x: s.herd.x.slice(0, s.herd.count),
     y: s.herd.y.slice(0, s.herd.count),
     hunger: s.herd.hunger.slice(0, s.herd.count),
+    id: s.herd.id.slice(0, s.herd.count),
     count: s.herd.count,
   };
 }
@@ -24,6 +25,7 @@ function predatorSnapshot(s: SimState): CarnivoreSnapshot {
     x: s.predators.x.slice(0, s.predators.count),
     y: s.predators.y.slice(0, s.predators.count),
     hunger: s.predators.hunger.slice(0, s.predators.count),
+    id: s.predators.id.slice(0, s.predators.count),
     count: s.predators.count,
   };
 }

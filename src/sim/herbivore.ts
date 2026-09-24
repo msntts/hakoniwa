@@ -12,6 +12,19 @@ export interface HerbivoreState {
   // 0 = just ate, 1 = starving. Tracks *current* feeding, independent of age.
   hunger: Float32Array;
   age: Uint16Array;
+  // Ticks remaining before this individual will move or eat again -- set by
+  // a successful bite (see HERBIVORE_PARAMS.restTicksAfterEating), decremented
+  // every tick regardless. 0 = free to act.
+  rest: Uint8Array;
+  // Stable per-individual identity, assigned once at birth and never reused.
+  // Array *index* is not stable across ticks -- death uses swap-remove, which
+  // moves the last individual into a dead one's slot -- but `id` survives
+  // that move (see removeHerbivoreAt), so the renderer can tell "this is the
+  // same animal, just relocated in the array" from "this is a different
+  // animal that happens to be at the same index now" (see renderer.ts's
+  // glide/facing tracking, keyed by id for exactly this reason).
+  id: Uint32Array;
+  nextId: number;
 }
 
 export function createHerbivoreState(capacity: number): HerbivoreState {
@@ -22,6 +35,9 @@ export function createHerbivoreState(capacity: number): HerbivoreState {
     y: new Int16Array(capacity),
     hunger: new Float32Array(capacity),
     age: new Uint16Array(capacity),
+    rest: new Uint8Array(capacity),
+    id: new Uint32Array(capacity),
+    nextId: 0,
   };
 }
 
@@ -32,6 +48,8 @@ export function spawnHerbivore(h: HerbivoreState, x: number, y: number, hunger: 
   h.y[i] = y;
   h.hunger[i] = hunger;
   h.age[i] = 0;
+  h.rest[i] = 0;
+  h.id[i] = h.nextId++;
   h.count++;
   return i;
 }
@@ -43,6 +61,8 @@ export function removeHerbivoreAt(h: HerbivoreState, index: number): void {
     h.y[index] = h.y[last] ?? 0;
     h.hunger[index] = h.hunger[last] ?? 0;
     h.age[index] = h.age[last] ?? 0;
+    h.rest[index] = h.rest[last] ?? 0;
+    h.id[index] = h.id[last] ?? 0;
   }
   h.count--;
 }
@@ -71,6 +91,7 @@ export function stepHerbivores(
     reproHungerCost,
     excretionRatio,
     lifespanTicks,
+    restTicksAfterEating,
     capacity: maxPop,
   } = HERBIVORE_PARAMS;
 
@@ -89,37 +110,57 @@ export function stepHerbivores(
     const x = h.x[i] ?? 0;
     const y = h.y[i] ?? 0;
 
-    // Greedy move toward the neighbor tile with the most biomass (small random
-    // tie-break so equal-biomass neighbors don't produce deterministic clumping).
+    // Still digesting a bite from a previous tick -- holds still instead of
+    // moving or eating again (see HERBIVORE_PARAMS.restTicksAfterEating).
+    const restLeft = h.rest[i] ?? 0;
+    const resting = restLeft > 0;
     let bestI = idx(board, x, y);
-    let bestBiomass = grass.biomass[bestI] ?? 0;
     let bestX = x;
     let bestY = y;
-    for (const [dx, dy] of NEIGHBOR_OFFSETS_8) {
-      const nx = wrap(x + dx, board.width);
-      const ny = wrap(y + dy, board.height);
-      const ni = idx(board, nx, ny);
-      if (carcassTiles.has(ni)) continue;
-      const nb = (grass.biomass[ni] ?? 0) + rng() * 0.001;
-      if (nb > bestBiomass) {
-        bestBiomass = nb;
-        bestX = nx;
-        bestY = ny;
-        bestI = ni;
+
+    if (resting) {
+      h.rest[i] = restLeft - 1;
+    } else {
+      // Greedy move toward the neighbor tile with the most biomass (small random
+      // tie-break so equal-biomass neighbors don't produce deterministic clumping).
+      let bestBiomass = grass.biomass[bestI] ?? 0;
+      for (const [dx, dy] of NEIGHBOR_OFFSETS_8) {
+        const nx = wrap(x + dx, board.width);
+        const ny = wrap(y + dy, board.height);
+        const ni = idx(board, nx, ny);
+        if (carcassTiles.has(ni)) continue;
+        const nb = (grass.biomass[ni] ?? 0) + rng() * 0.001;
+        if (nb > bestBiomass) {
+          bestBiomass = nb;
+          bestX = nx;
+          bestY = ny;
+          bestI = ni;
+        }
       }
+      h.x[i] = bestX;
+      h.y[i] = bestY;
     }
-    h.x[i] = bestX;
-    h.y[i] = bestY;
 
     // Hunger always climbs -- there is no reserve to bank against a future
-    // famine. A bite only relieves however much of it actually landed.
-    let hunger = (h.hunger[i] ?? 0) + hungerGainPerTick;
-    if ((grass.biomass[bestI] ?? 0) > grazeBiomassThreshold) {
+    // famine. A bite only relieves however much of it actually landed. While
+    // resting (digesting a just-landed bite), hunger is frozen instead of
+    // climbing: it already ate this cycle, so this isn't a second tick of
+    // going hungry, just the same meal's relief spread over 2 ticks instead
+    // of 1. Letting hunger keep climbing here would silently halve the real
+    // relief rate of sustained grazing (an extra ungained tick every cycle)
+    // without changing grazeHungerRelief to compensate, which flattens a
+    // constantly-fed individual's hunger into a stalled oscillation instead
+    // of trending toward reproHungerThreshold -- confirmed by tracing hunger
+    // over 20 ticks with unlimited grass before landing on this design.
+    let hunger = h.hunger[i] ?? 0;
+    if (!resting) hunger += hungerGainPerTick;
+    if (!resting && (grass.biomass[bestI] ?? 0) > grazeBiomassThreshold) {
       const eaten = grazeTile(grass, bestI, GRASS_PARAMS.grazePerBite);
       hunger -= grazeHungerRelief * (eaten / GRASS_PARAMS.grazePerBite);
       // 排泄: what isn't digested returns to the same tile as fertility --
       // eating here is what makes something able to grow here again later.
       depositFertility(grass, bestI, eaten * excretionRatio);
+      h.rest[i] = restTicksAfterEating;
     }
     hunger = Math.max(0, hunger);
 

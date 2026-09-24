@@ -116,6 +116,35 @@ describe('stepCarnivores', () => {
     expect(predators.count).toBe(2);
   });
 
+  it('stays put and does not hunt again for restTicksAfterEating ticks after a kill', () => {
+    const herd = createHerbivoreState(10);
+    spawnHerbivore(herd, 2, 2, 0.5); // caught this tick
+    spawnHerbivore(herd, 3, 2, 0.5); // a second, uncaught prey one tile east
+    const predators = createCarnivoreState(10);
+    const carcasses = createCarcassState(10);
+    spawnCarnivore(predators, 2, 2, 0.6);
+
+    stepCarnivores(predators, herd, carcasses, board, noRandom); // catches the first, enters rest
+    expect(herd.count).toBe(1); // only the (2,2) prey was eaten
+    const hungerJustAfterKill = predators.hunger[0];
+    expect(predators.rest[0]).toBe(CARNIVORE_PARAMS.restTicksAfterEating);
+
+    for (let tick = 0; tick < CARNIVORE_PARAMS.restTicksAfterEating; tick++) {
+      stepCarnivores(predators, herd, carcasses, board, noRandom);
+      // Resting: stays put and leaves the nearby prey uncaught.
+      expect(predators.x[0]).toBe(2);
+      expect(predators.y[0]).toBe(2);
+      expect(herd.count).toBe(1);
+    }
+    // Hunger is frozen during the rest -- it already ate this cycle.
+    expect(predators.hunger[0]).toBeCloseTo(hungerJustAfterKill, 5);
+
+    stepCarnivores(predators, herd, carcasses, board, noRandom); // rest over -- hunts again
+    expect(predators.x[0]).toBe(3);
+    expect(predators.y[0]).toBe(2);
+    expect(herd.count).toBe(0);
+  });
+
   it('refuses to move onto a tile occupied by a carcass, even with prey there', () => {
     const herd = createHerbivoreState(10);
     spawnHerbivore(herd, 3, 2, 0.5); // the only prey around, one tile east

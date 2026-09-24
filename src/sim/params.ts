@@ -64,6 +64,22 @@ export const HERBIVORE_PARAMS = {
 
   grazeBiomassThreshold: 0.1,
 
+  // A bite isn't instant: for this many ticks *after* the tick it eats on, an
+  // individual holds still instead of moving/eating again -- "move" costs
+  // its usual 1 tick, "eat" costs 1 (the bite) + this (the pause), so the two
+  // actions read as different lengths of screen time instead of blurring
+  // into the same walk-and-chomp every tick. Hunger is frozen (not climbing)
+  // while resting -- it already ate this cycle, so the pause is the *same*
+  // meal's relief spread over more ticks, not a second tick of going hungry.
+  // Letting hunger climb here instead was the first attempt, and it broke
+  // things: it halves the real relief rate of sustained grazing without
+  // changing grazeHungerRelief to compensate, so a constantly-fed individual
+  // stalls into a flat 0.05-hunger oscillation instead of ever trending down
+  // to reproHungerThreshold -- confirmed by tracing hunger over 20 ticks with
+  // unlimited grass. Freezing it instead keeps the same downward trend as
+  // before, just at half speed in tick-count.
+  restTicksAfterEating: 1,
+
   // 排泄 (while alive) ties "ate here" to "something can grow here again
   // later" -- on top of the slower, animal-independent senescence trickle
   // (GRASS_PARAMS.senescenceRate). 死骸 (on death) is CARCASS_PARAMS below,
@@ -114,6 +130,10 @@ export const CARNIVORE_PARAMS = {
   // needed to earn one birth, not just one.
   reproHungerThreshold: 0.05,
   reproHungerCost: 0.7,
+
+  // Same pacing device as HERBIVORE_PARAMS.restTicksAfterEating -- a kill
+  // freezes the predator in place for this many ticks afterward.
+  restTicksAfterEating: 1,
 
   // 3x a herbivore's 200 ticks -- long-lived, the way an apex predator
   // should be, at the cost of being fragile once its numbers do start

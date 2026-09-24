@@ -123,6 +123,59 @@ describe('stepHerbivores', () => {
     expect(grass.fertility[tile]).toBe(0);
   });
 
+  it('stays put and does not eat again for restTicksAfterEating ticks after a bite', () => {
+    const grass = createGrassState(board);
+    grass.biomass.fill(0.2); // below every other neighbor, so it never wins the move
+    grass.biomass[2 * board.width + 2] = 1; // start tile
+    grass.biomass[2 * board.width + 3] = 1; // (3,2): untouched, so it pulls ahead once (2,2) is grazed to 0.85
+    const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
+    spawnHerbivore(herd, 2, 2, 0.5);
+
+    stepHerbivores(herd, grass, carcasses, board, noRandom); // eats at (2,2), enters rest
+    const grazedTile = 2 * board.width + 2;
+    const biomassJustAfterBite = grass.biomass[grazedTile];
+    const hungerJustAfterBite = herd.hunger[0];
+    expect(herd.rest[0]).toBe(HERBIVORE_PARAMS.restTicksAfterEating);
+
+    for (let tick = 0; tick < HERBIVORE_PARAMS.restTicksAfterEating; tick++) {
+      stepHerbivores(herd, grass, carcasses, board, noRandom);
+      // Resting: stays on the grazed tile even though a neighbor now has more food.
+      expect(herd.x[0]).toBe(2);
+      expect(herd.y[0]).toBe(2);
+      expect(grass.biomass[grazedTile]).toBeCloseTo(biomassJustAfterBite, 5);
+    }
+    // Hunger is frozen during the rest -- it already ate this cycle, so this
+    // isn't a second tick of going hungry, just the same meal spread out.
+    expect(herd.hunger[0]).toBeCloseTo(hungerJustAfterBite, 5);
+
+    stepHerbivores(herd, grass, carcasses, board, noRandom); // rest over -- free to move and eat again
+    expect(herd.x[0]).toBe(3);
+    expect(herd.y[0]).toBe(2);
+  });
+
+  it('keeps trending toward satiation over time when constantly well-fed, even with a rest tick after each bite', () => {
+    // Regression guard: an earlier version of the rest mechanic let hunger
+    // keep climbing during the rest tick, which canceled out each bite's
+    // relief and left a constantly-fed individual oscillating in place
+    // instead of ever approaching reproHungerThreshold.
+    const grass = createGrassState(board);
+    grass.biomass.fill(1);
+    const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
+    const startHunger = 0.5;
+    spawnHerbivore(herd, 2, 2, startHunger);
+
+    // Few enough ticks that reproduction (which would perturb hunger by
+    // reproHungerCost) can't have kicked in yet.
+    for (let t = 0; t < 6; t++) {
+      stepHerbivores(herd, grass, carcasses, board, noRandom);
+    }
+
+    expect(herd.count).toBe(1);
+    expect(herd.hunger[0]).toBeLessThan(startHunger);
+  });
+
   it('refuses to move onto a tile occupied by a carcass, even if it has the best food', () => {
     const grass = createGrassState(board);
     grass.biomass.fill(0);

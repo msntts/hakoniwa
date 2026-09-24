@@ -15,8 +15,20 @@ import {
 const HERBIVORE_FRAME_MS = 140;
 const CARNIVORE_FRAME_MS = 170;
 
-const emptyHerbivores: HerbivoreSnapshot = { x: new Int16Array(0), y: new Int16Array(0), hunger: new Float32Array(0), count: 0 };
-const emptyCarnivores: CarnivoreSnapshot = { x: new Int16Array(0), y: new Int16Array(0), hunger: new Float32Array(0), count: 0 };
+const emptyHerbivores: HerbivoreSnapshot = {
+  x: new Int16Array(0),
+  y: new Int16Array(0),
+  hunger: new Float32Array(0),
+  id: new Uint32Array(0),
+  count: 0,
+};
+const emptyCarnivores: CarnivoreSnapshot = {
+  x: new Int16Array(0),
+  y: new Int16Array(0),
+  hunger: new Float32Array(0),
+  id: new Uint32Array(0),
+  count: 0,
+};
 const emptyCarcasses: CarcassSnapshot = {
   x: new Int16Array(0),
   y: new Int16Array(0),
@@ -42,24 +54,43 @@ export interface RendererState {
   herbivores: HerbivoreSnapshot;
   carnivores: CarnivoreSnapshot;
   carcasses: CarcassSnapshot;
-  // Previous tick's positions -- the "from" side of the walk/glide
-  // interpolation drawn between herbivores/carnivores (the "to" side). Index
-  // aligned with the *current* snapshot the same way herbFacing/carnFacing
-  // are (see below), so it inherits the same swap-remove caveat.
-  fromHerbivores: HerbivoreSnapshot;
-  fromCarnivores: CarnivoreSnapshot;
+  // The "from" side of this tick's walk/glide interpolation (herbivores/
+  // carnivores above is the "to" side), aligned index-for-index with the
+  // *current* snapshot -- herbFromX[k]/herbFromY[k] is where herbivores.x[k]/
+  // y[k]'s individual glides from. undefined at index k means no known
+  // previous position (a birth), so it's drawn at rest, no glide. Computed
+  // via id lookup (see herbPrevById below), not by reusing last tick's array
+  // position at the same index -- swap-remove on death reshuffles indices,
+  // so "index k last tick" and "index k this tick" can be two unrelated
+  // individuals, which used to show up as a wrong pair gliding across the
+  // whole board between their unrelated positions.
+  herbFromX: Array<number | undefined>;
+  herbFromY: Array<number | undefined>;
+  carnFromX: Array<number | undefined>;
+  carnFromY: Array<number | undefined>;
   // performance.now() when herbivores/carnivores/carcasses last landed, plus
   // how long (ms) a tick is meant to span -- together these turn "now" into
-  // the 0..1 progress used to glide from fromHerbivores to herbivores over
+  // the 0..1 progress used to glide from the from* arrays to herbivores over
   // the full tick instead of jump-cutting there (see docs/manual.html #s5).
   tickStartMs: number;
   tickDurationMs: number;
-  // Index-aligned facing (+1 = drawn as baked, -1 = mirrored). There's no
-  // stable per-individual id in HerbivoreState/CarnivoreState (death uses
-  // swap-remove), so this occasionally mis-attributes for one tick right
-  // when a death reshuffles indices -- a cosmetic, self-correcting glitch.
+  // Facing per current individual (+1 = drawn as baked, -1 = mirrored),
+  // aligned with herbivores/carnivores the same way herbFromX/carnFromX are.
   herbFacing: Int8Array;
   carnFacing: Int8Array;
+  // Last-landed position + facing per stable individual id, carried across
+  // ticks so herbFromX/carnFromX and herbFacing/carnFacing can look an
+  // individual up by identity instead of by array index. Rebuilt fresh each
+  // tick (see computeGlide) from the current snapshot, so a dead
+  // individual's entry is naturally dropped rather than accumulating.
+  herbPrevById: Map<number, GlideEntry>;
+  carnPrevById: Map<number, GlideEntry>;
+}
+
+export interface GlideEntry {
+  x: number;
+  y: number;
+  facing: number;
 }
 
 export function createRenderer(
@@ -89,12 +120,16 @@ export function createRenderer(
     herbivores: emptyHerbivores,
     carnivores: emptyCarnivores,
     carcasses: emptyCarcasses,
-    fromHerbivores: emptyHerbivores,
-    fromCarnivores: emptyCarnivores,
+    herbFromX: [],
+    herbFromY: [],
+    carnFromX: [],
+    carnFromY: [],
     tickStartMs: 0,
     tickDurationMs,
     herbFacing: new Int8Array(0),
     carnFacing: new Int8Array(0),
+    herbPrevById: new Map(),
+    carnPrevById: new Map(),
   };
 }
 
@@ -128,10 +163,10 @@ function facingFromDelta(currX: number, prevX: number, boardWidth: number, fallb
 
 // Interpolates one axis from a previous-tick coordinate to this tick's,
 // taking the board's wrap into account the same way facingFromDelta does
-// (shortest way around, not always increasing). `fromV` is undefined for an
-// index with no previous-tick counterpart (a birth, or a post-death
-// swap-remove reshuffle) -- those just appear at their landing tile with no
-// glide, same as the existing facing fallback.
+// (shortest way around, not always increasing). `fromV` is undefined only
+// for an id with no previous-tick counterpart at all (a birth) -- that
+// individual just appears at its landing tile with no glide, same as the
+// existing facing fallback.
 function interpAxis(fromV: number | undefined, toV: number, max: number, progress: number): number {
   if (fromV === undefined) return toV;
   let d = toV - fromV;
@@ -141,17 +176,40 @@ function interpAxis(fromV: number | undefined, toV: number, max: number, progres
   return ((v % max) + max) % max;
 }
 
-// Index-aligned with the incoming snapshot, not identity-aligned with the
-// previous one -- see the RendererState.herbFacing/carnFacing doc comment.
-function computeFacing(currX: Int16Array, count: number, prevX: Int16Array, prevFacing: Int8Array, boardWidth: number): Int8Array {
+// Builds this tick's from*/facing arrays (index-aligned with the incoming
+// snapshot) by looking each individual up in `prevById` by its stable id,
+// not by reusing whatever sat at the same array index last tick -- see the
+// RendererState.herbFromX/herbPrevById doc comments for why that distinction
+// matters. Also returns the id->position/facing map for the *next* tick's
+// lookup, rebuilt fresh so ids no longer present (deaths) fall out on their
+// own instead of accumulating.
+export function computeGlide(
+  ids: Uint32Array,
+  toX: Int16Array,
+  toY: Int16Array,
+  count: number,
+  prevById: Map<number, GlideEntry>,
+  boardWidth: number,
+): { fromX: Array<number | undefined>; fromY: Array<number | undefined>; facing: Int8Array; nextById: Map<number, GlideEntry> } {
+  const fromX: Array<number | undefined> = new Array(count);
+  const fromY: Array<number | undefined> = new Array(count);
   const facing = new Int8Array(count);
-  for (let i = 0; i < count; i++) {
-    const cx = currX[i] ?? 0;
-    const px = prevX[i];
-    const fallback = prevFacing[i] ?? 1;
-    facing[i] = px === undefined ? fallback : facingFromDelta(cx, px, boardWidth, fallback);
+  const nextById = new Map<number, GlideEntry>();
+  for (let k = 0; k < count; k++) {
+    const id = ids[k] ?? 0;
+    const tx = toX[k] ?? 0;
+    const ty = toY[k] ?? 0;
+    const prev = prevById.get(id);
+    let f = 1; // birth (or first frame ever): no previous position, no fallback facing to inherit
+    if (prev) {
+      fromX[k] = prev.x;
+      fromY[k] = prev.y;
+      f = facingFromDelta(tx, prev.x, boardWidth, prev.facing);
+    }
+    facing[k] = f;
+    nextById.set(id, { x: tx, y: ty, facing: f });
   }
-  return facing;
+  return { fromX, fromY, facing, nextById };
 }
 
 // Live animals take priority over a carcass on the same tile (design.md:
@@ -195,7 +253,8 @@ function drawFacingSprite(
 function drawAnimatedHerbivores(
   r: RendererState,
   herbivores: HerbivoreSnapshot,
-  from: HerbivoreSnapshot,
+  fromX: Array<number | undefined>,
+  fromY: Array<number | undefined>,
   progress: number,
   nowMs: number,
 ): void {
@@ -203,8 +262,8 @@ function drawAnimatedHerbivores(
   for (let k = 0; k < herbivores.count; k++) {
     const toX = herbivores.x[k] ?? 0;
     const toY = herbivores.y[k] ?? 0;
-    const ix = interpAxis(from.x[k], toX, r.width, progress);
-    const iy = interpAxis(from.y[k], toY, r.height, progress);
+    const ix = interpAxis(fromX[k], toX, r.width, progress);
+    const iy = interpAxis(fromY[k], toY, r.height, progress);
     const bucket = hungerToBucket(herbivores.hunger[k] ?? 0);
     // Desync neighboring individuals so a herd doesn't nibble in lockstep.
     const frame = (baseFrame + k * 3) % ANIMAL_ANIM_FRAMES;
@@ -217,7 +276,8 @@ function drawAnimatedHerbivores(
 function drawAnimatedCarnivores(
   r: RendererState,
   carnivores: CarnivoreSnapshot,
-  from: CarnivoreSnapshot,
+  fromX: Array<number | undefined>,
+  fromY: Array<number | undefined>,
   progress: number,
   nowMs: number,
 ): void {
@@ -225,8 +285,8 @@ function drawAnimatedCarnivores(
   for (let k = 0; k < carnivores.count; k++) {
     const toX = carnivores.x[k] ?? 0;
     const toY = carnivores.y[k] ?? 0;
-    const ix = interpAxis(from.x[k], toX, r.width, progress);
-    const iy = interpAxis(from.y[k], toY, r.height, progress);
+    const ix = interpAxis(fromX[k], toX, r.width, progress);
+    const iy = interpAxis(fromY[k], toY, r.height, progress);
     const bucket = hungerToBucket(carnivores.hunger[k] ?? 0);
     const frame = (baseFrame + k * 3) % ANIMAL_ANIM_FRAMES;
     const rect = animalSpriteRect(r.sheet, frame, bucket);
@@ -242,14 +302,16 @@ function addInterpolatedTiles(
   tiles: Set<number>,
   width: number,
   height: number,
-  to: { x: Int16Array | Uint16Array; y: Int16Array | Uint16Array },
-  from: { x: Int16Array | Uint16Array; y: Int16Array | Uint16Array },
+  toX: Int16Array,
+  toY: Int16Array,
+  fromX: Array<number | undefined>,
+  fromY: Array<number | undefined>,
   count: number,
   progress: number,
 ): void {
   for (let k = 0; k < count; k++) {
-    const ix = interpAxis(from.x[k], to.x[k] ?? 0, width, progress);
-    const iy = interpAxis(from.y[k], to.y[k] ?? 0, height, progress);
+    const ix = interpAxis(fromX[k], toX[k] ?? 0, width, progress);
+    const iy = interpAxis(fromY[k], toY[k] ?? 0, height, progress);
     const x0 = Math.floor(ix) % width;
     const y0 = Math.floor(iy) % height;
     const x1 = (x0 + 1) % width;
@@ -266,13 +328,11 @@ function overlayTileSet(
   herbivores: HerbivoreSnapshot,
   carnivores: CarnivoreSnapshot,
   carcasses: CarcassSnapshot,
-  fromHerbivores: HerbivoreSnapshot,
-  fromCarnivores: CarnivoreSnapshot,
   progress: number,
 ): Set<number> {
   const tiles = new Set<number>();
-  addInterpolatedTiles(tiles, r.width, r.height, herbivores, fromHerbivores, herbivores.count, progress);
-  addInterpolatedTiles(tiles, r.width, r.height, carnivores, fromCarnivores, carnivores.count, progress);
+  addInterpolatedTiles(tiles, r.width, r.height, herbivores.x, herbivores.y, r.herbFromX, r.herbFromY, herbivores.count, progress);
+  addInterpolatedTiles(tiles, r.width, r.height, carnivores.x, carnivores.y, r.carnFromX, r.carnFromY, carnivores.count, progress);
   for (let k = 0; k < carcasses.count; k++) {
     tiles.add((carcasses.y[k] ?? 0) * r.width + (carcasses.x[k] ?? 0));
   }
@@ -287,7 +347,7 @@ function overlayTileSet(
 // repainted here too, same as the old single tick-driven repaint used to do.
 function paintOverlayFrame(r: RendererState, nowMs: number): void {
   const progress = r.tickDurationMs > 0 ? Math.min(1, Math.max(0, (nowMs - r.tickStartMs) / r.tickDurationMs)) : 1;
-  const currOverlayTiles = overlayTileSet(r, r.herbivores, r.carnivores, r.carcasses, r.fromHerbivores, r.fromCarnivores, progress);
+  const currOverlayTiles = overlayTileSet(r, r.herbivores, r.carnivores, r.carcasses, progress);
 
   const repaint = new Set<number>();
   for (const i of r.prevOverlayTiles) repaint.add(i);
@@ -295,8 +355,8 @@ function paintOverlayFrame(r: RendererState, nowMs: number): void {
   for (const i of repaint) paintGrassTile(r, i);
 
   drawCarcasses(r, r.carcasses);
-  drawAnimatedHerbivores(r, r.herbivores, r.fromHerbivores, progress, nowMs);
-  drawAnimatedCarnivores(r, r.carnivores, r.fromCarnivores, progress, nowMs);
+  drawAnimatedHerbivores(r, r.herbivores, r.herbFromX, r.herbFromY, progress, nowMs);
+  drawAnimatedCarnivores(r, r.carnivores, r.carnFromX, r.carnFromY, progress, nowMs);
 
   r.prevOverlayTiles = currOverlayTiles;
 }
@@ -336,12 +396,20 @@ export function paintInit(
   r.herbivores = herbivores;
   r.carnivores = carnivores;
   r.carcasses = carcasses;
-  // Same as "to": nothing to glide from yet, so the first frame just holds.
-  r.fromHerbivores = herbivores;
-  r.fromCarnivores = carnivores;
+  // No previous-tick positions yet, so everything appears at rest (no glide)
+  // and faces right by default -- computeGlide does this on its own when
+  // prevById is empty.
+  const herbGlide = computeGlide(herbivores.id, herbivores.x, herbivores.y, herbivores.count, new Map(), r.width);
+  const carnGlide = computeGlide(carnivores.id, carnivores.x, carnivores.y, carnivores.count, new Map(), r.width);
+  r.herbFromX = herbGlide.fromX;
+  r.herbFromY = herbGlide.fromY;
+  r.herbFacing = herbGlide.facing;
+  r.herbPrevById = herbGlide.nextById;
+  r.carnFromX = carnGlide.fromX;
+  r.carnFromY = carnGlide.fromY;
+  r.carnFacing = carnGlide.facing;
+  r.carnPrevById = carnGlide.nextById;
   r.tickStartMs = performance.now();
-  r.herbFacing = new Int8Array(herbivores.count).fill(1);
-  r.carnFacing = new Int8Array(carnivores.count).fill(1);
 
   paintOverlayFrame(r, r.tickStartMs);
 }
@@ -359,13 +427,21 @@ export function applyTick(
   }
   for (const d of dirty) paintGrassTile(r, d.i);
 
-  r.herbFacing = computeFacing(herbivores.x, herbivores.count, r.herbivores.x, r.herbFacing, r.width);
-  r.carnFacing = computeFacing(carnivores.x, carnivores.count, r.carnivores.x, r.carnFacing, r.width);
-  // This tick's landing spot becomes the "to" side; whatever was "to" a
-  // moment ago (where everything visually still sits, at progress 1) becomes
-  // the new "from" -- so the glide always starts from where the eye left off.
-  r.fromHerbivores = r.herbivores;
-  r.fromCarnivores = r.carnivores;
+  // herbPrevById/carnPrevById hold each individual's last-landed position by
+  // stable id (not array index -- see the type's doc comment for why that
+  // distinction is the whole point), so this glide always starts from where
+  // *that same animal* actually was, even if a same-tick death elsewhere
+  // reshuffled the array via swap-remove.
+  const herbGlide = computeGlide(herbivores.id, herbivores.x, herbivores.y, herbivores.count, r.herbPrevById, r.width);
+  const carnGlide = computeGlide(carnivores.id, carnivores.x, carnivores.y, carnivores.count, r.carnPrevById, r.width);
+  r.herbFromX = herbGlide.fromX;
+  r.herbFromY = herbGlide.fromY;
+  r.herbFacing = herbGlide.facing;
+  r.herbPrevById = herbGlide.nextById;
+  r.carnFromX = carnGlide.fromX;
+  r.carnFromY = carnGlide.fromY;
+  r.carnFacing = carnGlide.facing;
+  r.carnPrevById = carnGlide.nextById;
   r.herbivores = herbivores;
   r.carnivores = carnivores;
   r.carcasses = carcasses;

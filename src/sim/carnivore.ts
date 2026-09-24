@@ -15,6 +15,13 @@ export interface CarnivoreState {
   y: Int16Array;
   hunger: Float32Array;
   age: Uint16Array;
+  // Ticks remaining before this individual will move or hunt again -- see
+  // HerbivoreState.rest for the same mechanism on the prey side.
+  rest: Uint8Array;
+  // Stable per-individual identity -- see HerbivoreState.id for why array
+  // index alone can't be trusted across ticks (swap-remove on death).
+  id: Uint32Array;
+  nextId: number;
 }
 
 export function createCarnivoreState(capacity: number): CarnivoreState {
@@ -25,6 +32,9 @@ export function createCarnivoreState(capacity: number): CarnivoreState {
     y: new Int16Array(capacity),
     hunger: new Float32Array(capacity),
     age: new Uint16Array(capacity),
+    rest: new Uint8Array(capacity),
+    id: new Uint32Array(capacity),
+    nextId: 0,
   };
 }
 
@@ -35,6 +45,8 @@ export function spawnCarnivore(c: CarnivoreState, x: number, y: number, hunger: 
   c.y[i] = y;
   c.hunger[i] = hunger;
   c.age[i] = 0;
+  c.rest[i] = 0;
+  c.id[i] = c.nextId++;
   c.count++;
   return i;
 }
@@ -46,6 +58,8 @@ function removeCarnivoreAt(c: CarnivoreState, index: number): void {
     c.y[index] = c.y[last] ?? 0;
     c.hunger[index] = c.hunger[last] ?? 0;
     c.age[index] = c.age[last] ?? 0;
+    c.rest[index] = c.rest[last] ?? 0;
+    c.id[index] = c.id[last] ?? 0;
   }
   c.count--;
 }
@@ -84,8 +98,16 @@ export function stepCarnivores(
   board: Board,
   rng: () => number,
 ): void {
-  const { hungerGainPerTick, predationRelief, starvationHunger, reproHungerThreshold, reproHungerCost, lifespanTicks, capacity: maxPop } =
-    CARNIVORE_PARAMS;
+  const {
+    hungerGainPerTick,
+    predationRelief,
+    starvationHunger,
+    reproHungerThreshold,
+    reproHungerCost,
+    lifespanTicks,
+    restTicksAfterEating,
+    capacity: maxPop,
+  } = CARNIVORE_PARAMS;
 
   const deaths: number[] = [];
   const births: Array<[number, number]> = [];
@@ -101,35 +123,51 @@ export function stepCarnivores(
     const x = c.x[i] ?? 0;
     const y = c.y[i] ?? 0;
 
-    // Greedy move toward the neighbor tile with the most (unclaimed) prey --
-    // same shape as a herbivore chasing grass biomass, just hunting a moving
-    // target instead of a stationary one.
+    // Still digesting a kill from a previous tick -- holds still instead of
+    // hunting again (see CARNIVORE_PARAMS.restTicksAfterEating).
+    const restLeft = c.rest[i] ?? 0;
+    const resting = restLeft > 0;
     let bestI = idx(board, x, y);
-    let bestPrey = preyBuckets.get(bestI)?.length ?? 0;
     let bestX = x;
     let bestY = y;
-    for (const [dx, dy] of NEIGHBOR_OFFSETS_8) {
-      const nx = wrap(x + dx, board.width);
-      const ny = wrap(y + dy, board.height);
-      const ni = idx(board, nx, ny);
-      if (carcassTiles.has(ni)) continue;
-      const preyHere = (preyBuckets.get(ni)?.length ?? 0) + rng() * 0.001;
-      if (preyHere > bestPrey) {
-        bestPrey = preyHere;
-        bestX = nx;
-        bestY = ny;
-        bestI = ni;
-      }
-    }
-    c.x[i] = bestX;
-    c.y[i] = bestY;
 
-    let hunger = (c.hunger[i] ?? 0) + hungerGainPerTick;
-    const bucket = preyBuckets.get(bestI);
-    if (bucket && bucket.length > 0) {
-      const preyIndex = bucket.pop()!; // claims it -- no other carnivore can eat it this tick
-      eatenHerbivoreIndices.push(preyIndex);
-      hunger -= predationRelief;
+    if (resting) {
+      c.rest[i] = restLeft - 1;
+    } else {
+      // Greedy move toward the neighbor tile with the most (unclaimed) prey --
+      // same shape as a herbivore chasing grass biomass, just hunting a moving
+      // target instead of a stationary one.
+      let bestPrey = preyBuckets.get(bestI)?.length ?? 0;
+      for (const [dx, dy] of NEIGHBOR_OFFSETS_8) {
+        const nx = wrap(x + dx, board.width);
+        const ny = wrap(y + dy, board.height);
+        const ni = idx(board, nx, ny);
+        if (carcassTiles.has(ni)) continue;
+        const preyHere = (preyBuckets.get(ni)?.length ?? 0) + rng() * 0.001;
+        if (preyHere > bestPrey) {
+          bestPrey = preyHere;
+          bestX = nx;
+          bestY = ny;
+          bestI = ni;
+        }
+      }
+      c.x[i] = bestX;
+      c.y[i] = bestY;
+    }
+
+    // Frozen instead of climbing while resting off a kill -- see the matching
+    // comment in herbivore.ts for why (a stalled hunger oscillation instead
+    // of trending down, confirmed by tracing it on the herbivore side).
+    let hunger = c.hunger[i] ?? 0;
+    if (!resting) hunger += hungerGainPerTick;
+    if (!resting) {
+      const bucket = preyBuckets.get(bestI);
+      if (bucket && bucket.length > 0) {
+        const preyIndex = bucket.pop()!; // claims it -- no other carnivore can eat it this tick
+        eatenHerbivoreIndices.push(preyIndex);
+        hunger -= predationRelief;
+        c.rest[i] = restTicksAfterEating;
+      }
     }
     hunger = Math.max(0, hunger);
 

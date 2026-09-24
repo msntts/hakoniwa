@@ -85,7 +85,7 @@
 <main>
 
 <h1>hakoniwa マニュアル</h1>
-<p class="lede">現在の実装が「何を・どういう因果で」動かしているかのモデル。機能追加はまずこの文書の上で位置と受け入れ基準を決め、それからコードに入る。最終更新: 2026-09-24（コミット <code>67bb909</code> 時点）</p>
+<p class="lede">現在の実装が「何を・どういう因果で」動かしているかのモデル。機能追加はまずこの文書の上で位置と受け入れ基準を決め、それからコードに入る。</p>
 
 <div class="callout">
   <strong>この文書の位置づけ</strong><br>
@@ -270,28 +270,30 @@
 <p><strong>初期値：</strong>biomass は10%のタイルが疎（0.15〜0.25）、10%が密（0.75〜0.95）、残りが0.3〜0.8。fertility は biomass の半分。</p>
 
 <h3>4.3 草食獣 ●</h3>
-<p>状態は <strong>空腹度 <code>hunger</code>（0=満腹〜1=餓死）</strong>と<strong>年齢 <code>age</code></strong>の2つだけ。この2つは独立していて、どちらか一方で死ぬ。蓄えという概念は無く、空腹度は毎tick必ず上がり、食べた時だけ下がる。</p>
+<p>状態は <strong>空腹度 <code>hunger</code>（0=満腹〜1=餓死）</strong>と<strong>年齢 <code>age</code></strong>の2つだけ。この2つは独立していて、どちらか一方で死ぬ。蓄えという概念は無く、空腹度は毎tick必ず上がり、食べた時だけ下がる。個体には誕生時に振られる安定id（<code>id</code>）もあるが、これは表示側（移動の補間・向きの判定、5章）が個体を追跡するためだけの情報で、シミュレーションのロジックからは参照されない。</p>
 <ol class="steps">
-  <li><strong>移動</strong>：自タイルと隣8タイルのうち、草が一番多いタイルへ1マス動く（死骸のあるタイルは候補から外す。同じ量のときはわずかな乱数で決まり、その場に留まるより隣へ移りやすい）</li>
+  <li><strong>休憩判定</strong>：直前に採食して <code>rest</code>（残り休憩tick数）が1以上残っていれば、それを1減らして今回の移動・空腹・採食（下記2〜4）を丸ごとスキップする（その場に留まり、空腹度も変化しない）。加齢・死・繁殖の判定（5〜7）はこの間も通常通り行う</li>
+  <li><strong>移動</strong>：（休憩中でなければ）自タイルと隣8タイルのうち、草が一番多いタイルへ1マス動く（死骸のあるタイルは候補から外す。同じ量のときはわずかな乱数で決まり、その場に留まるより隣へ移りやすい）</li>
   <li><strong>空腹</strong>：<code>hunger += 0.05</code></li>
-  <li><strong>採食</strong>：そのタイルの草が 0.1 を超えていれば最大 0.15 食べ、<code>hunger −= 0.1 × (食べた量 / 0.15)</code>。食べた量の半分をそのタイルの養分に返す（排泄）</li>
+  <li><strong>採食</strong>：そのタイルの草が 0.1 を超えていれば最大 0.15 食べ、<code>hunger −= 0.1 × (食べた量 / 0.15)</code>。食べた量の半分をそのタイルの養分に返す（排泄）。実際に一口でも食べたら <code>rest = HERBIVORE_PARAMS.restTicksAfterEating</code>（1）をセットし、次のtickは休憩に入る</li>
   <li><strong>加齢</strong>：<code>age += 1</code></li>
   <li><strong>死</strong>：<code>hunger ≥ 1</code>（餓死）または <code>age &gt; 200</code>（老衰）でその場に死骸を残して消える</li>
   <li><strong>繁殖</strong>：生き残り、かつ <code>hunger ≤ 0.15</code> なら同じタイルに子を1体（子の空腹度 0.5）。親は <code>hunger += 0.3</code>。無性生殖</li>
 </ol>
-<p class="small">収支の目安：毎tick食べ続けられれば空腹度は 0.05 ずつ下がる。2 tick に1回しか食べられないと横ばい、それ以下なら餓死に向かう。飢えだけで死ぬまで最短 20 tick（約1エポック）。</p>
+<p class="small">収支の目安：食べるたびに1tick休憩が挟まるため、最速でも「採食tickで −0.05、休憩tickで±0」の2tick周期。餓死しない限り食べ続けられれば空腹度は2tickあたり0.05ずつ下がる（休憩を入れる前は1tickあたり0.05だったので、tick数でいうと半分の速さ）。食べられる頻度がこれより低いと横ばい〜餓死に向かう。飢えだけで死ぬまで最短 20 tick（約1エポック、休憩の有無に関係ない — 休憩中は空腹度が上がらないため）。</p>
 
 <h3>4.4 肉食獣 ▲</h3>
-<p>草食獣と同じ2つの状態（空腹度・年齢）。違いは餌が「草」ではなく「そのタイルにいる草食獣」であること。</p>
+<p>草食獣と同じ2つの状態（空腹度・年齢）＋同じ表示専用の安定id。違いは餌が「草」ではなく「そのタイルにいる草食獣」であること。</p>
 <ol class="steps">
-  <li><strong>移動</strong>：自タイルと隣8タイルのうち、<strong>まだ誰にも捕まっていない草食獣</strong>が一番多いタイルへ1マス動く（死骸タイルは除外）</li>
+  <li><strong>休憩判定</strong>：草食獣と同じ仕組み。直前の捕食で <code>rest</code> が残っていれば1減らして移動・空腹・捕食（下記2〜4）をスキップする</li>
+  <li><strong>移動</strong>：（休憩中でなければ）自タイルと隣8タイルのうち、<strong>まだ誰にも捕まっていない草食獣</strong>が一番多いタイルへ1マス動く（死骸タイルは除外）</li>
   <li><strong>空腹</strong>：<code>hunger += 0.04</code></li>
-  <li><strong>捕食</strong>：そのタイルに草食獣がいれば1体捕まえて <code>hunger −= 0.3</code>。捕まった草食獣はこのtickの終わりに消え、<strong>死骸は残さない</strong>（養分は捕食者に移る扱い）。1体の獲物を2体の捕食者が取り合うことは無い</li>
+  <li><strong>捕食</strong>：そのタイルに草食獣がいれば1体捕まえて <code>hunger −= 0.3</code>。捕まった草食獣はこのtickの終わりに消え、<strong>死骸は残さない</strong>（養分は捕食者に移る扱い）。1体の獲物を2体の捕食者が取り合うことは無い。捕食に成功したら <code>rest = CARNIVORE_PARAMS.restTicksAfterEating</code>（1）をセット</li>
   <li><strong>加齢</strong>：<code>age += 1</code></li>
   <li><strong>死</strong>：<code>hunger ≥ 1</code> または <code>age &gt; 600</code> でその場に死骸を残して消える</li>
   <li><strong>繁殖</strong>：<code>hunger ≤ 0.05</code> なら子を1体（子の空腹度 0.5）。親は <code>hunger += 0.7</code></li>
 </ol>
-<p class="small">収支の目安：1回の捕食（−0.3）で約7 tick分の空腹を賄う。繁殖するには捕食を何度も重ねて空腹度を 0.05 以下まで下げる必要がある。</p>
+<p class="small">収支の目安：1回の捕食（−0.3）で約7 tick分の空腹を賄う。捕食の直後は1tick休むが、空腹度は上がらないので収支には影響しない（草食獣と違い、捕食のリリーフ量が空腹の増加量よりずっと大きいため、休憩を挟んでも大きく下振れする傾向自体は変わらない）。繁殖するには捕食を何度も重ねて空腹度を 0.05 以下まで下げる必要がある。</p>
 
 <h3>4.5 死骸 x</h3>
 <div class="table-wrap">
@@ -319,7 +321,7 @@
 </div>
 <p><strong>現状のずれ：</strong>design.md は「背景色=量、草の形=構造」を独立した2軸にしたいが、今は両方とも biomass の1変数から決まっていて独立していない。土壌養分（fertility）は画面に出ない。</p>
 <p><strong>部分描画：</strong>毎tick塗り直すのは「見た目の段階が変わった草タイル」＋「前tickか今tickに動物・死骸がいたタイル」だけ。HUDの <code>dirty</code> がその数。</p>
-<p><strong>移動の補間：</strong>動物の位置は tick の瞬間に新しいタイルへ飛ぶのではなく、前 tick の位置から今 tick の位置まで tick 時間（2000ms）いっぱいかけて滑らかに動く（<code>render/renderer.ts</code> の from/to 補間）。捕食・採食の瞬間をジャンプカットにせず、目で追える「シーン」にするための変更。死骸は動かないのでそのまま。</p>
+<p><strong>移動の補間：</strong>動物の位置は tick の瞬間に新しいタイルへ飛ぶのではなく、前 tick の位置から今 tick の位置まで tick 時間（2000ms）いっぱいかけて滑らかに動く（<code>render/renderer.ts</code> の from/to 補間）。捕食・採食の瞬間をジャンプカットにせず、目で追える「シーン」にするための変更。死骸は動かないのでそのまま。採食・捕食した直後の休憩tick（4.3/4.4の <code>restTicksAfterEating</code>）は前後の位置が同じなので、この補間は自然にゼロ距離になり、その個体だけその場に留まって見える -- 常に動き続ける他個体との対比が、採食のメリハリを表示側の特別な分岐なしに生んでいる。前tick→今tickの対応は配列の同じ添字同士ではなく、個体の安定id（<code>HerbivoreState.id</code> / <code>CarnivoreState.id</code>、4.3/4.4章）で引き当てる。死亡はswap-remove（末尾の個体を空いた枠に詰める）で実装されているため、添字同士の対応だと「今tick死んだ個体の枠に、盤面の別の場所にいた無関係な個体が来た」ケースを同一個体の移動と誤認し、その個体が盤面を斜めに横切って飛ぶように見えるバグがあった（10章）。</p>
 
 <!-- ============================================================ -->
 <h2 id="s6">6. アーキテクチャ</h2>
@@ -336,7 +338,7 @@ render/renderer.ts 差分描画          ◀─ tick ─  sim/loop.ts      tick(
                                                sim/board.ts     座標・折り返し・近傍</pre>
 <ul>
   <li><strong>モジュール境界：</strong>草は動物を知らない。草食獣は草を「引数として」受け取って操作する。肉食獣は草食獣を引数として受け取る。上の段が下の段に依存し、逆は無い。気候などを足すときもこの向きを守る。</li>
-  <li><strong>メッセージ：</strong><code>src/types.ts</code> の <code>MainToWorker</code> / <code>WorkerToMain</code>。毎tick、草の差分と各種族の位置が送られる。死骸のスナップショットは座標・経過tickに加えて発生元の種（<code>species</code>）も持つ（表示の描き分け専用、4.5章）。位置はtickの瞬間の着地点であって、その間の補間はメインスレッド側（renderer.ts）の仕事。<code>set-tick-rate</code> は定義済みだがUIは無く、変更してもrenderer側の補間時間（<code>DEFAULT_TICK_MS</code> 起動時の値で固定）には反映されない。</li>
+  <li><strong>メッセージ：</strong><code>src/types.ts</code> の <code>MainToWorker</code> / <code>WorkerToMain</code>。毎tick、草の差分と各種族の位置が送られる。草食獣・肉食獣のスナップショットは座標・空腹度に加えて表示専用の安定id（<code>id</code>、4.3/4.4章）を持つ。死骸のスナップショットは座標・経過tickに加えて発生元の種（<code>species</code>）も持つ（表示の描き分け専用、4.5章）。位置はtickの瞬間の着地点であって、その間の補間はメインスレッド側（renderer.ts）の仕事。<code>set-tick-rate</code> は定義済みだがUIは無く、変更してもrenderer側の補間時間（<code>DEFAULT_TICK_MS</code> 起動時の値で固定）には反映されない。</li>
   <li><strong>配信：</strong><code>main</code> に push すると GitHub Actions が typecheck・test・build して GitHub Pages に公開（<code>https://msntts.github.io/hakoniwa/</code>）。</li>
 </ul>
 
@@ -365,6 +367,8 @@ render/renderer.ts 差分描画          ◀─ tick ─  sim/loop.ts      tick(
   <tr><td>INV-12</td><td>動物が全滅しても、時間をかけて盤面全体が回復する（凍りつかない）</td><td><span class="tag no">未確認</span></td><td>約2500 tickで全面回復を確認済みだが、その後「枯死でbiomassが減る」変更と肉食獣の追加が入った</td></tr>
   <tr><td>INV-13</td><td>捕食者の数は被食者より十分少ない</td><td><span class="tag no">未確認</span></td><td>ピーク時に 127 対 1373 を確認。ただし崩壊直前に 146 対 144 とほぼ同数になった局面あり。目標であって現状は保証されない</td></tr>
   <tr><td>INV-14</td><td>毎tickの塗り直しは盤面全体より少ない</td><td><span class="tag obs">実機</span></td><td>HUDの <code>dirty</code></td></tr>
+  <tr><td>INV-15</td><td>採食・捕食した個体は直後の <code>restTicksAfterEating</code> tick、移動も再摂食もしない。休憩中は空腹度も変化しない</td><td><span class="tag ok">テスト</span></td><td><code>herbivore.test.ts</code> <code>carnivore.test.ts</code></td></tr>
+  <tr><td>INV-16</td><td>潤沢に食べ続けられる個体の空腹度は、休憩を挟んでも時間とともに繁殖しきい値へ向かって下がり続ける（横ばい・上昇に転じない）</td><td><span class="tag ok">テスト</span></td><td><code>herbivore.test.ts</code>。restTicksAfterEating導入時、休憩中も空腹度を上げる版でこれが破れた（10章）</td></tr>
 </table>
 </div>
 
@@ -406,6 +410,8 @@ render/renderer.ts 差分描画          ◀─ tick ─  sim/loop.ts      tick(
 <div class="table-wrap">
 <table>
   <tr><th>判断</th><th>理由・経緯</th></tr>
+  <tr><td>採食・捕食の直後に <code>restTicksAfterEating</code>（1）tickその場で休む仕組みを追加</td><td>ユーザー指摘：「移動」と「採食」が毎tick同時に起きるため、歩いているだけなのか食べて止まっているのかが画面から見分けられなかった。移動=1tick・採食=1tick（噛む）+1tick（休憩）=2tickという行動ごとのコスト差をつけ、静止区間を作ることでメリハリを出した。<strong>最初の実装では休憩中も空腹度を上げ続けていたが、20 tickのトレースで検証したところ、潤沢な食料下でも空腹度が0.45〜0.5で振動するだけで繁殖しきい値(0.15)に一切近づかないことが判明した</strong>（採食の relief 0.1 と gain 0.05 が近い値に意図的にチューニングされていたため、休憩tickのgainだけが追加されると実質相殺されてしまう）。休憩中は空腹度を凍結（上げも下げもしない）する方式に変更し、以前と同じ下降トレンドを維持した（tick数では半分の速さになる）。この「潤沢に食べ続ければ繁殖しきい値に近づき続ける」性質をINV-16として regression test 化した</td></tr>
+  <tr><td>草食獣・肉食獣に表示専用の安定id（<code>id</code>）を追加し、移動補間・向き判定の個体特定を配列添字からidベースに変更</td><td>ユーザー報告：「タイミングは不定だが、遠くから飛んできて重なるように見える個体がいる」。原因は前tick→今tickの補間が配列の添字だけで個体を対応づけていたこと。死亡は swap-remove（末尾の個体を空いた枠へ詰める）で実装されているため、ある個体が死んだ枠に別の生存個体が「テレポート」してくる形になり、次のtickの補間はその枠を「同じ個体が移動した」と誤認して、無関係な2個体の位置を結ぶ長距離の斜め移動を描いてしまっていた。母数が多いほど（草食獣は毎tick誰かが死にやすい）頻発するため「タイミングが分からない」という報告と一致した。修正は個体に誕生時から不変のidを持たせ（<code>HerbivoreState</code>/<code>CarnivoreState</code>、4.3/4.4章）、rendererはこのidをキーにした前tick位置のMapで補間元を引くように変更（<code>render/renderer.ts</code> の <code>computeGlide</code>）。死んだidのエントリは毎tick作り直すMapから自然に消えるので、個別の削除処理は不要。再現条件をそのまま <code>test/renderer.test.ts</code> の単体テストにした（死亡でid=2が別の添字に来るケースを再現し、補間元が正しくid=2自身の前回位置になることを確認）</td></tr>
   <tr><td>死骸の表示を「x」の一文字グリフから、発生元の種のボディ形状を横倒しにしたベクタ図形に変更</td><td>死骸が種によらず同じ記号だったため、何が倒れているか画面から分からなかった。生体のシルエット（草食獣＝丸みのある体、肉食獣＝細身＋縞模様）を再利用し、耳が垂れ脚が硬直して広がる「倒れた」ポーズにして描き分けた。色のフェード（新鮮な赤→土色）は変更していない。このためだけに <code>CarcassState</code>/<code>CarcassSnapshot</code> に <code>species</code>（0=草食獣・1=肉食獣）を追加した（4.5章）</td></tr>
   <tr><td>草食獣の健康時の体色を黄（<code>#ffd83d</code>）から茶（<code>#c98a3d</code>）寄りに変更</td><td>黄色が鮮やかすぎて生態系の落ち着いた配色から浮いていたため、より土に近い茶系に寄せた。空腹時の色（くすんだ黄土色）は変更なし</td></tr>
   <tr><td>1 tick 500ms → 2000ms、動物の描画位置を前tick→今tickへ滑らかに補間</td><td>tickごとに新しいタイルへ瞬間移動していたため、捕食・採食の瞬間が一瞬すぎて何が起きたか分かりにくかった。進行速度自体を1/4に落とし、その分の時間で「前の場所から今の場所へ歩く/近づく」動きを見せることで、tick間の出来事を1つの見えるシーンにした。シミュレーションのロジック（<code>sim/loop.ts</code>の<code>tick()</code>）自体は変更していない</td></tr>

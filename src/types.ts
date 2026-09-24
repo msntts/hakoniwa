@@ -17,6 +17,11 @@ export interface HerbivoreSnapshot {
   x: Int16Array;
   y: Int16Array;
   hunger: Float32Array;
+  // Stable per-individual id (see sim/herbivore.ts HerbivoreState.id) -- the
+  // renderer uses this, not array index, to match an individual to its
+  // previous-tick position for glide/facing (index alone breaks across a
+  // same-tick death's swap-remove).
+  id: Uint32Array;
   count: number;
 }
 
@@ -26,6 +31,7 @@ export interface CarnivoreSnapshot {
   x: Int16Array;
   y: Int16Array;
   hunger: Float32Array;
+  id: Uint32Array;
   count: number;
 }
 
