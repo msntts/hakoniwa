@@ -170,7 +170,10 @@ export function stepHerbivores(
     if (hunger >= starvationHunger || age > lifespanTicks) {
       // 死骸: stays put and visible, releasing fertility gradually as it
       // decomposes (see stepCarcasses) instead of dumping it all at once.
-      spawnCarcass(carcasses, bestX, bestY, CARCASS_SPECIES.HERBIVORE);
+      // fromX/fromY (x,y = this individual's position before the move step
+      // above) let the renderer glide the carcass in from where it was last
+      // drawn alive, instead of popping up to a tile away at bestX/bestY.
+      spawnCarcass(carcasses, bestX, bestY, CARCASS_SPECIES.HERBIVORE, x, y);
       deaths.push(i);
       continue;
     }

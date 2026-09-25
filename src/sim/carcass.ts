@@ -18,6 +18,16 @@ export interface CarcassState {
   y: Int16Array;
   age: Uint16Array; // ticks since death
   species: Uint8Array; // see CARCASS_SPECIES
+  // Where the individual was standing at the *start* of the tick it died --
+  // usually equal to x/y (it died in place), but movement happens before the
+  // death check each tick (sim/herbivore.ts, sim/carnivore.ts), so a body can
+  // land up to 1 tile from where it was last drawn alive. The renderer glides
+  // the carcass in from here on its first visible tick (age === 0) instead of
+  // having it pop into existence a tile away from where the animal vanished.
+  fromX: Int16Array;
+  fromY: Int16Array;
+  // True only until this carcass's first stepCarcasses call -- see there.
+  justSpawned: Uint8Array;
 }
 
 export function createCarcassState(capacity: number): CarcassState {
@@ -28,16 +38,29 @@ export function createCarcassState(capacity: number): CarcassState {
     y: new Int16Array(capacity),
     age: new Uint16Array(capacity),
     species: new Uint8Array(capacity),
+    fromX: new Int16Array(capacity),
+    fromY: new Int16Array(capacity),
+    justSpawned: new Uint8Array(capacity),
   };
 }
 
-export function spawnCarcass(c: CarcassState, x: number, y: number, species: 0 | 1 = CARCASS_SPECIES.HERBIVORE): void {
+export function spawnCarcass(
+  c: CarcassState,
+  x: number,
+  y: number,
+  species: 0 | 1 = CARCASS_SPECIES.HERBIVORE,
+  fromX: number = x,
+  fromY: number = y,
+): void {
   if (c.count >= c.capacity) return; // extreme die-offs just skip the visual, decay pressure already applied via death
   const i = c.count;
   c.x[i] = x;
   c.y[i] = y;
   c.age[i] = 0;
   c.species[i] = species;
+  c.fromX[i] = fromX;
+  c.fromY[i] = fromY;
+  c.justSpawned[i] = 1;
   c.count++;
 }
 
@@ -48,6 +71,9 @@ function removeCarcassAt(c: CarcassState, index: number): void {
     c.y[index] = c.y[last] ?? 0;
     c.age[index] = c.age[last] ?? 0;
     c.species[index] = c.species[last] ?? 0;
+    c.fromX[index] = c.fromX[last] ?? 0;
+    c.fromY[index] = c.fromY[last] ?? 0;
+    c.justSpawned[index] = c.justSpawned[last] ?? 0;
   }
   c.count--;
 }
@@ -58,6 +84,20 @@ export function stepCarcasses(c: CarcassState, grass: GrassState, board: Board):
   const expired: number[] = [];
 
   for (let i = 0; i < c.count; i++) {
+    // Skip decay entirely on the tick a carcass is born: spawnCarcass() runs
+    // earlier in the same sim tick (see sim/loop.ts's step order), so without
+    // this it would immediately age from 0 to 1 before ever being reported to
+    // the renderer -- age 0 (freshly dead, not yet decomposing) was never
+    // actually observable, and the carcass disappeared a tick early at the
+    // other end (age reaches decayTicks, and gets removed here, one call
+    // sooner than intended). Consuming the flag here means it decays for
+    // exactly decayTicks *real* ticks starting next tick, same total as
+    // before -- this doesn't add or remove any lifetime, it just stops
+    // double-counting the spawn tick.
+    if (c.justSpawned[i]) {
+      c.justSpawned[i] = 0;
+      continue;
+    }
     const x = c.x[i] ?? 0;
     const y = c.y[i] ?? 0;
     depositFertility(grass, idx(board, x, y), perTickRelease);

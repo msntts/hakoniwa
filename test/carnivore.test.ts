@@ -89,6 +89,35 @@ describe('stepCarnivores', () => {
     expect(carcasses.y[0]).toBe(2);
   });
 
+  it('records the carcass fromX/fromY at where it was standing before this tick\'s move, not where it died', () => {
+    // Movement happens before the death check each tick (see the step order
+    // above), so an individual that moves and then dies the same tick leaves
+    // its carcass up to a tile away from where it was last standing alive --
+    // the renderer needs fromX/fromY to glide the carcass in from there
+    // instead of popping it straight into x/y (see render/renderer.ts's
+    // carcassGlideFrom, and docs/manual.html section 10).
+    const herd = createHerbivoreState(10); // no prey anywhere
+    const predators = createCarnivoreState(10);
+    const carcasses = createCarcassState(10);
+    // A constant (non-zero) rng makes the tie-break noise in the move step
+    // always favor the first neighbor checked (NEIGHBOR_OFFSETS_8[0] =
+    // [0,-1], i.e. north) even with zero prey anywhere, so it moves north
+    // exactly one tile and then starves in its new spot.
+    const constRng = () => 0.5;
+    // Already at the starvation line -- this tick's unavoidable hunger gain
+    // (no prey anywhere to relieve it) pushes it over.
+    spawnCarnivore(predators, 2, 2, CARNIVORE_PARAMS.starvationHunger);
+
+    stepCarnivores(predators, herd, carcasses, board, constRng);
+
+    expect(predators.count).toBe(0);
+    expect(carcasses.count).toBe(1);
+    expect(carcasses.x[0]).toBe(2);
+    expect(carcasses.y[0]).toBe(1); // moved north before dying
+    expect(carcasses.fromX[0]).toBe(2);
+    expect(carcasses.fromY[0]).toBe(2); // but it was standing here at the start of the tick
+  });
+
   it('dies of old age once past lifespanTicks, even while well fed', () => {
     const herd = createHerbivoreState(10);
     spawnHerbivore(herd, 2, 2, 0.5); // plenty of prey, would otherwise survive

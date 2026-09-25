@@ -36,6 +36,8 @@ const emptyCarcasses: CarcassSnapshot = {
   y: new Int16Array(0),
   age: new Uint16Array(0),
   species: new Uint8Array(0),
+  fromX: new Int16Array(0),
+  fromY: new Int16Array(0),
   count: 0,
 };
 
@@ -267,15 +269,30 @@ export function computeGlide(
   return { fromX, fromY, facing, eating, nextById };
 }
 
+// A carcass's fromX/fromY only means anything on the tick it's first shown
+// (age === 0 -- see sim/carcass.ts's justSpawned skip): that's the one tick
+// the individual actually moved before dying, so the drawn position glides
+// there from where it was standing at the start of that tick instead of
+// popping straight into its final resting tile (up to 1 tile away). Every
+// later tick it's already at rest, so `undefined` here makes interpAxis
+// return the resting position outright, same as a never-moved individual.
+export function carcassGlideFrom(carcasses: CarcassSnapshot, k: number): { fromX: number | undefined; fromY: number | undefined } {
+  if ((carcasses.age[k] ?? 0) !== 0) return { fromX: undefined, fromY: undefined };
+  return { fromX: carcasses.fromX[k] ?? carcasses.x[k], fromY: carcasses.fromY[k] ?? carcasses.y[k] };
+}
+
 // Live animals take priority over a carcass on the same tile (design.md:
 // animals are always the top layer), so carcasses are drawn first and
 // animals painted over them. Between the two animal layers, carnivores paint
 // last (on top of herbivores) -- the rarer case is the one worth seeing.
-function drawCarcasses(r: RendererState, carcasses: CarcassSnapshot): void {
+function drawCarcasses(r: RendererState, carcasses: CarcassSnapshot, progress: number): void {
   const decayTicks = CARCASS_PARAMS.decayTicks;
   for (let k = 0; k < carcasses.count; k++) {
-    const x = carcasses.x[k] ?? 0;
-    const y = carcasses.y[k] ?? 0;
+    const toX = carcasses.x[k] ?? 0;
+    const toY = carcasses.y[k] ?? 0;
+    const { fromX, fromY } = carcassGlideFrom(carcasses, k);
+    const x = interpAxis(fromX, toX, r.width, progress);
+    const y = interpAxis(fromY, toY, r.height, progress);
     const t = Math.min(1, (carcasses.age[k] ?? 0) / decayTicks);
     const species = carcasses.species[k] ?? 0;
     drawCarcassSprite(r.ctx, r.sheet.tileSize, x, y, species, t);
@@ -442,9 +459,18 @@ function overlayTileSet(
   const tiles = new Set<number>();
   addInterpolatedTiles(tiles, r.width, r.height, herbivores.x, herbivores.y, r.herbFromX, r.herbFromY, herbivores.count, progress);
   addInterpolatedTiles(tiles, r.width, r.height, carnivores.x, carnivores.y, r.carnFromX, r.carnFromY, carnivores.count, progress);
+  // Most carcasses are fully at rest (fromX/fromY undefined -> interpAxis
+  // just returns x/y, still only the one tile below), but one gliding in on
+  // its first tick (age === 0) can overlap up to 2x2 tiles like a live
+  // animal -- addInterpolatedTiles covers both cases the same way.
+  const carcassFromX = new Array<number | undefined>(carcasses.count);
+  const carcassFromY = new Array<number | undefined>(carcasses.count);
   for (let k = 0; k < carcasses.count; k++) {
-    tiles.add((carcasses.y[k] ?? 0) * r.width + (carcasses.x[k] ?? 0));
+    const from = carcassGlideFrom(carcasses, k);
+    carcassFromX[k] = from.fromX;
+    carcassFromY[k] = from.fromY;
   }
+  addInterpolatedTiles(tiles, r.width, r.height, carcasses.x, carcasses.y, carcassFromX, carcassFromY, carcasses.count, progress);
   return tiles;
 }
 
@@ -481,7 +507,7 @@ function paintOverlayFrame(r: RendererState, nowMs: number): void {
   for (const i of currOverlayTiles) repaint.add(i);
   for (const i of repaint) paintGrassTile(r, i);
 
-  drawCarcasses(r, r.carcasses);
+  drawCarcasses(r, r.carcasses, progress);
   drawAnimatedHerbivores(r, r.herbivores, r.herbFromX, r.herbFromY, r.herbEating, progress, nowMs);
   drawAnimatedCarnivores(r, r.carnivores, r.carnFromX, r.carnFromY, r.carnEating, progress, nowMs);
 

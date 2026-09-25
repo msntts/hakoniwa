@@ -46,6 +46,12 @@ export interface CarcassSnapshot {
   y: Int16Array;
   age: Uint16Array;
   species: Uint8Array; // 0 = herbivore, 1 = carnivore -- see CARCASS_SPECIES
+  // Where the individual was standing before the tick it died (see
+  // sim/carcass.ts CarcassState.fromX/fromY) -- only meaningful while
+  // age === 0, the one tick the renderer glides the carcass in from here
+  // instead of popping it straight into x/y.
+  fromX: Int16Array;
+  fromY: Int16Array;
   count: number;
 }
 

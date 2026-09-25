@@ -38,6 +38,8 @@ function carcassSnapshot(s: SimState): CarcassSnapshot {
     y: s.carcasses.y.slice(0, s.carcasses.count),
     age: s.carcasses.age.slice(0, s.carcasses.count),
     species: s.carcasses.species.slice(0, s.carcasses.count),
+    fromX: s.carcasses.fromX.slice(0, s.carcasses.count),
+    fromY: s.carcasses.fromY.slice(0, s.carcasses.count),
     count: s.carcasses.count,
   };
 }

@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { computeGlide, type GlideEntry } from '../src/render/renderer';
+import { carcassGlideFrom, computeGlide, type GlideEntry } from '../src/render/renderer';
+import type { CarcassSnapshot } from '../src/types';
 
 const boardWidth = 80;
 const noRest = new Uint8Array(4);
+
+function carcassSnapshot(entries: Array<{ x: number; y: number; age: number; fromX: number; fromY: number }>): CarcassSnapshot {
+  return {
+    x: Int16Array.from(entries.map((e) => e.x)),
+    y: Int16Array.from(entries.map((e) => e.y)),
+    age: Uint16Array.from(entries.map((e) => e.age)),
+    species: new Uint8Array(entries.length),
+    fromX: Int16Array.from(entries.map((e) => e.fromX)),
+    fromY: Int16Array.from(entries.map((e) => e.fromY)),
+    count: entries.length,
+  };
+}
 
 describe('computeGlide', () => {
   it('glides an individual from its own previous position, not whatever sat at its new array index', () => {
@@ -114,5 +127,41 @@ describe('computeGlide', () => {
     // And the tick after that (prev.rest === 1, still < maxRest): also idle.
     const third = computeGlide(ids, toX, toY, new Uint8Array([0]), 1, second.nextById, boardWidth, maxRest);
     expect(third.eating[0]).toBe(0);
+  });
+});
+
+describe('carcassGlideFrom', () => {
+  it('glides in from fromX/fromY on the tick it first appears (age === 0)', () => {
+    const carcasses = carcassSnapshot([{ x: 3, y: 4, age: 0, fromX: 2, fromY: 4 }]);
+
+    const { fromX, fromY } = carcassGlideFrom(carcasses, 0);
+
+    expect(fromX).toBe(2);
+    expect(fromY).toBe(4);
+  });
+
+  it('has no glide origin once past its first tick, even though fromX/fromY are still stored', () => {
+    // age >= 1: the individual has already finished dying, this carcass has
+    // been sitting at x/y since last tick -- gliding it again from fromX
+    // every subsequent frame would make it slide back and forth in place.
+    const carcasses = carcassSnapshot([{ x: 3, y: 4, age: 1, fromX: 2, fromY: 4 }]);
+
+    const { fromX, fromY } = carcassGlideFrom(carcasses, 0);
+
+    expect(fromX).toBeUndefined();
+    expect(fromY).toBeUndefined();
+  });
+
+  it('has no glide origin for a carcass that never moved (fromX/fromY default to x/y)', () => {
+    const carcasses = carcassSnapshot([{ x: 3, y: 4, age: 0, fromX: 3, fromY: 4 }]);
+
+    const { fromX, fromY } = carcassGlideFrom(carcasses, 0);
+
+    // Not wrong to return (3,4) here instead of undefined -- interpAxis
+    // treats a defined-but-equal fromV/toV the same as no glide (0
+    // distance) -- but undefined is what a same-position spawn actually
+    // produces, so pin that down too.
+    expect(fromX).toBe(3);
+    expect(fromY).toBe(4);
   });
 });

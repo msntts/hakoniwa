@@ -123,6 +123,35 @@ describe('stepHerbivores', () => {
     expect(grass.fertility[tile]).toBe(0);
   });
 
+  it('records the carcass fromX/fromY at where it was standing before this tick\'s move, not where it died', () => {
+    // Movement happens before the death check each tick (see the step order
+    // above), so an individual that moves and then dies the same tick leaves
+    // its carcass up to a tile away from where it was last standing alive --
+    // the renderer needs fromX/fromY to glide the carcass in from there
+    // instead of popping it straight into x/y (see render/renderer.ts's
+    // carcassGlideFrom, and docs/manual.html section 10).
+    const grass = createGrassState(board);
+    grass.biomass.fill(0);
+    // Just enough biomass to pull it east (bestBiomass starts at its own
+    // tile's 0), but below grazeBiomassThreshold (0.1) so it doesn't actually
+    // eat there -- it moves toward food it can't reach in time and starves.
+    grass.biomass[2 * board.width + 3] = 0.05;
+    const herd = createHerbivoreState(10);
+    const carcasses = createCarcassState(10);
+    // Already at the starvation line -- this tick's unavoidable hunger gain
+    // (it doesn't clear grazeBiomassThreshold, see above) pushes it over.
+    spawnHerbivore(herd, 2, 2, HERBIVORE_PARAMS.starvationHunger);
+
+    stepHerbivores(herd, grass, carcasses, board, noRandom);
+
+    expect(herd.count).toBe(0);
+    expect(carcasses.count).toBe(1);
+    expect(carcasses.x[0]).toBe(3); // moved east before dying
+    expect(carcasses.y[0]).toBe(2);
+    expect(carcasses.fromX[0]).toBe(2);
+    expect(carcasses.fromY[0]).toBe(2); // but it was standing here at the start of the tick
+  });
+
   it('stays put and does not eat again for restTicksAfterEating ticks after a bite', () => {
     const grass = createGrassState(board);
     grass.biomass.fill(0.2); // below every other neighbor, so it never wins the move

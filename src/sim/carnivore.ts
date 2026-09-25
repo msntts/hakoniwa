@@ -175,7 +175,10 @@ export function stepCarnivores(
     c.age[i] = age;
 
     if (hunger >= starvationHunger || age > lifespanTicks) {
-      spawnCarcass(carcasses, bestX, bestY, CARCASS_SPECIES.CARNIVORE);
+      // fromX/fromY (x,y = position before the move step above) let the
+      // renderer glide the carcass in from where it was last drawn alive --
+      // see the matching comment in herbivore.ts.
+      spawnCarcass(carcasses, bestX, bestY, CARCASS_SPECIES.CARNIVORE, x, y);
       deaths.push(i);
       continue;
     }
