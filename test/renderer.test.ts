@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { carcassGlideFrom, computeGlide, type GlideEntry } from '../src/render/renderer';
-import type { CarcassSnapshot } from '../src/types';
+import { addGhostTiles, carcassGlideFrom, computeGlide, type GlideEntry } from '../src/render/renderer';
+import type { CarcassSnapshot, CarnivoreSnapshot } from '../src/types';
 
 const boardWidth = 80;
+const boardHeight = 45;
 const noRest = new Uint8Array(4);
+
+function carnivoreSnapshot(entries: Array<{ x: number; y: number }>): CarnivoreSnapshot {
+  return {
+    x: Int16Array.from(entries.map((e) => e.x)),
+    y: Int16Array.from(entries.map((e) => e.y)),
+    hunger: new Float32Array(entries.length),
+    id: Uint32Array.from(entries.map((_, i) => i)),
+    rest: new Uint8Array(entries.length),
+    count: entries.length,
+  };
+}
 
 function carcassSnapshot(entries: Array<{ x: number; y: number; age: number; fromX: number; fromY: number }>): CarcassSnapshot {
   return {
@@ -163,5 +175,50 @@ describe('carcassGlideFrom', () => {
     // produces, so pin that down too.
     expect(fromX).toBe(3);
     expect(fromY).toBe(4);
+  });
+});
+
+describe('addGhostTiles', () => {
+  it('marks the tile the ghost trails into, not just the tiles the carnivore itself covers', () => {
+    // Facing right (1): drawPreyGhost trails left (opposite facing), so the
+    // ghost's footprint reaches into the column *behind* the carnivore's own
+    // tile -- a column addInterpolatedTiles never adds for a carnivore that
+    // isn't moving (it only ever adds the current tile and its +1 neighbor,
+    // never -1). Without this, that tile never gets grass-repainted once the
+    // ghost stops being drawn there, leaving a stale frame on screen (10章,
+    // ユーザー報告：「半身だけの草食動物がすうtick残ってる」).
+    const carnivores = carnivoreSnapshot([{ x: 5, y: 5 }]);
+    const facing = Int8Array.from([1]);
+    const eating = Uint8Array.from([1]);
+    const tiles = new Set<number>();
+
+    addGhostTiles(tiles, boardWidth, boardHeight, carnivores, facing, eating);
+
+    // Ghost center lands at x = 5 - 0.65 = 4.35 -> covers columns 4 and 5.
+    expect(tiles.has(5 * boardWidth + 4)).toBe(true);
+    expect(tiles.has(5 * boardWidth + 5)).toBe(true);
+  });
+
+  it('adds nothing for a carnivore that is not currently eating', () => {
+    const carnivores = carnivoreSnapshot([{ x: 5, y: 5 }]);
+    const facing = Int8Array.from([1]);
+    const eating = Uint8Array.from([0]);
+    const tiles = new Set<number>();
+
+    addGhostTiles(tiles, boardWidth, boardHeight, carnivores, facing, eating);
+
+    expect(tiles.size).toBe(0);
+  });
+
+  it('wraps around the torus edge instead of landing off-board', () => {
+    const carnivores = carnivoreSnapshot([{ x: 0, y: 5 }]);
+    const facing = Int8Array.from([1]); // trails left off the x=0 edge
+    const eating = Uint8Array.from([1]);
+    const tiles = new Set<number>();
+
+    addGhostTiles(tiles, boardWidth, boardHeight, carnivores, facing, eating);
+
+    // Ghost center lands at x = 0 - 0.65 -> wraps to boardWidth - 0.65, i.e. column boardWidth-1.
+    expect(tiles.has(5 * boardWidth + (boardWidth - 1))).toBe(true);
   });
 });

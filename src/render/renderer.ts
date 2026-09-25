@@ -449,6 +449,41 @@ function addInterpolatedTiles(
   }
 }
 
+// drawPreyGhost draws up to 0.65 tile (plus its own half-tile width) behind
+// an eating carnivore, opposite its facing -- a tile the carnivore's own
+// interpolated position never covers (addInterpolatedTiles only ever adds
+// the current tile and its +1 neighbor, never -1, and the carnivore isn't
+// moving during the bite tick anyway). Without marking that tile too, it
+// never gets grass-repainted once the ghost stops being drawn there, so the
+// last frame of it stays stuck on screen looking like a half-visible,
+// unmoving animal for however many ticks pass until something else happens
+// to repaint that tile (10章, ユーザー報告).
+export function addGhostTiles(
+  tiles: Set<number>,
+  width: number,
+  height: number,
+  carnivores: CarnivoreSnapshot,
+  carnFacing: Int8Array,
+  carnEating: Uint8Array,
+): void {
+  for (let k = 0; k < carnivores.count; k++) {
+    if (carnEating[k] !== 1) continue;
+    const toX = carnivores.x[k] ?? 0;
+    const toY = carnivores.y[k] ?? 0;
+    const facing = carnFacing[k] ?? 1;
+    const gx = (((toX - facing * 0.65) % width) + width) % width;
+    const gy = (((toY + 0.12) % height) + height) % height;
+    const x0 = Math.floor(gx) % width;
+    const y0 = Math.floor(gy) % height;
+    const x1 = (x0 + 1) % width;
+    const y1 = (y0 + 1) % height;
+    tiles.add(y0 * width + x0);
+    tiles.add(y0 * width + x1);
+    tiles.add(y1 * width + x0);
+    tiles.add(y1 * width + x1);
+  }
+}
+
 function overlayTileSet(
   r: RendererState,
   herbivores: HerbivoreSnapshot,
@@ -459,6 +494,7 @@ function overlayTileSet(
   const tiles = new Set<number>();
   addInterpolatedTiles(tiles, r.width, r.height, herbivores.x, herbivores.y, r.herbFromX, r.herbFromY, herbivores.count, progress);
   addInterpolatedTiles(tiles, r.width, r.height, carnivores.x, carnivores.y, r.carnFromX, r.carnFromY, carnivores.count, progress);
+  addGhostTiles(tiles, r.width, r.height, carnivores, r.carnFacing, r.carnEating);
   // Most carcasses are fully at rest (fromX/fromY undefined -> interpAxis
   // just returns x/y, still only the one tile below), but one gliding in on
   // its first tick (age === 0) can overlap up to 2x2 tiles like a live
