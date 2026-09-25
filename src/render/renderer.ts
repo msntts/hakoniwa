@@ -348,11 +348,15 @@ function drawAnimatedHerbivores(
 // debug capture in the browser: no trace of the ghost at any point in an
 // eating tick). Offsetting it toward the tile the predator approached from
 // keeps it looking pinned to the kill while actually showing its shrinking
-// silhouette instead of a bite animation with nothing underneath it.
+// silhouette instead of a bite animation with nothing underneath it. Also
+// drawn *after* the predator (see the call site) so the still-overlapping
+// portion is alpha-blended instead of clipped away -- a half-tile offset
+// alone still left the predator-side half of the shape cut off, reading as
+// a stray half-body rather than a whole animal (10章, ユーザー報告).
 function drawPreyGhost(ctx: CanvasRenderingContext2D, sheet: SpriteSheet, ix: number, iy: number, progress: number, facing: number): void {
   const rect = animalSpriteRect(sheet, 0, 2);
   const size = sheet.tileSize;
-  const trail = -facing * size * 0.5;
+  const trail = -facing * size * 0.65;
   const cx = ix * size + size / 2 + trail;
   const cy = iy * size + size / 2 + size * 0.12;
   const scale = 1 - progress * 0.6;
@@ -382,13 +386,21 @@ function drawAnimatedCarnivores(
     const bucket = hungerToBucket(carnivores.hunger[k] ?? 0);
     const isEating = eating[k] === 1;
     const facing = r.carnFacing[k] ?? 1;
-    if (isEating) drawPreyGhost(r.ctx, r.sheet, ix, iy, progress, facing);
     // Bite loop plays exactly while this individual is sitting on its kill
     // (see the eating[k] doc comment above) -- previously there was no such
     // signal at all, so carnivores never showed a visible bite.
     const frame = pickAnimalFrame(baseFrame + k * 3, isEating);
     const rect = animalSpriteRect(r.sheet, frame, bucket);
     drawFacingSprite(r.ctx, r.sheet.carnivoreCanvas, rect, ix * r.sheet.tileSize, iy * r.sheet.tileSize, r.sheet.tileSize, facing);
+    // Ghost drawn *after* (on top of) the predator, not before/underneath --
+    // even offset half a tile behind it (see drawPreyGhost), the two still
+    // overlap for a good chunk of their footprint since the predator is
+    // stationary all through the bite. Drawing it first meant that
+    // overlapping half got clipped away under the predator's opaque sprite,
+    // so only a stray sliver of the silhouette ever peeked out -- reading as
+    // a "half body" rather than a herbivore. On top, the overlap is alpha
+    // blended instead of clipped, so the whole shrinking shape stays legible.
+    if (isEating) drawPreyGhost(r.ctx, r.sheet, ix, iy, progress, facing);
   }
 }
 
