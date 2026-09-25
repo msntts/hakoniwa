@@ -1,5 +1,5 @@
 import { CARCASS_PARAMS, CARNIVORE_PARAMS, HERBIVORE_PARAMS } from '../sim/params';
-import type { CarcassSnapshot, CarnivoreSnapshot, DirtyTile, HerbivoreSnapshot } from '../types';
+import type { CarcassSnapshot, CarnivoreSnapshot, DirtyTile, HerbivoreSnapshot, PredationSnapshot } from '../types';
 import {
   animalSpriteRect,
   drawCarcassSprite,
@@ -40,6 +40,11 @@ const emptyCarcasses: CarcassSnapshot = {
   fromY: new Int16Array(0),
   count: 0,
 };
+const emptyPredations: PredationSnapshot = {
+  x: new Int16Array(0),
+  y: new Int16Array(0),
+  count: 0,
+};
 
 export interface RendererState {
   ctx: CanvasRenderingContext2D;
@@ -58,6 +63,11 @@ export interface RendererState {
   herbivores: HerbivoreSnapshot;
   carnivores: CarnivoreSnapshot;
   carcasses: CarcassSnapshot;
+  // This tick's catches (see sim/carnivore.ts's PredationEvent) -- unlike
+  // carcasses, these aren't a standing entity with a multi-tick lifetime,
+  // just a one-tick list consumed by drawPredations and cleared to empty the
+  // next tick, since a kill leaves nothing behind to track by id.
+  predations: PredationSnapshot;
   // The "from" side of this tick's walk/glide interpolation (herbivores/
   // carnivores above is the "to" side), aligned index-for-index with the
   // *current* snapshot -- herbFromX[k]/herbFromY[k] is where herbivores.x[k]/
@@ -82,10 +92,14 @@ export interface RendererState {
   // aligned with herbivores/carnivores the same way herbFromX/carnFromX are.
   herbFacing: Int8Array;
   carnFacing: Int8Array;
-  // Whether this individual is actually sitting still digesting *this* tick
-  // (see computeGlide's doc comment on the one-tick phase shift) -- gates the
-  // bite animation loop, and for carnivores also draws the being-eaten prey
-  // ghost underneath them.
+  // Gates which animation loop plays (calm walk vs. bite). For herbivores,
+  // read one tick late (see computeGlide's `delayedEating` doc comment) so
+  // it lands on the tick the individual is actually sitting still digesting,
+  // not the tick it's still walking toward the food. Carnivores read it
+  // *undelayed* instead -- a kill removes the victim from the data the same
+  // tick it's caught, so there's no later "now sitting still" tick to delay
+  // to; the bite plays during the very tick (and glide) that ends on the
+  // kill, in step with drawPredations drawing the victim fading away there.
   herbEating: Uint8Array;
   carnEating: Uint8Array;
   // Last-landed position + facing + rest per stable individual id, carried
@@ -144,6 +158,7 @@ export function createRenderer(
     herbivores: emptyHerbivores,
     carnivores: emptyCarnivores,
     carcasses: emptyCarcasses,
+    predations: emptyPredations,
     herbFromX: [],
     herbFromY: [],
     carnFromX: [],
@@ -211,24 +226,35 @@ function interpAxis(fromV: number | undefined, toV: number, max: number, progres
 // *next* tick's lookup, rebuilt fresh so ids no longer present (deaths) fall
 // out on their own instead of accumulating.
 //
-// `eating` is deliberately read from *last* tick's rest (prev.rest), not
-// this tick's `rest` array -- a bite and the move that lands on its tile
-// happen in the very same sim tick (see sim/herbivore.ts, sim/carnivore.ts),
-// so the tick that reports the fresh rest>0 is still the one gliding *toward*
-// the food; the individual doesn't actually sit still digesting until the
-// *following* tick, whose own incoming rest has already ticked back down.
-// Shifting the read by one tick this way makes the bite/being-eaten visuals
-// land on the tick where the individual is actually stationary.
-//
-// Within that, `eating` only fires on the *first* such tick (prev.rest ===
-// maxRest, the value a fresh bite sets it to), not for every tick the
-// individual has rest > 0. With restTicksAfterEating at 1 today the two are
-// the same thing, but they diverge the moment that's raised above 1: without
+// `eating` fires on exactly one tick per bite: the tick where `rest` (this
+// individual's HerbivoreState.rest/CarnivoreState.rest) first reads back as
+// `maxRest`, the value a fresh bite sets it to -- not every tick rest stays
+// > 0. With restTicksAfterEating at 1 the two are the same thing for
+// carnivores, but they diverge for herbivores now that theirs is 2: without
 // this distinction, a longer rest reads as a longer *bite* (mouth
 // open/closing every one of those ticks), which is backwards -- only the
 // tick right after landing the bite is actually chewing; the remaining rest
 // ticks are just standing still, already fed, and should fall back to the
 // (mouth-closed) walk loop like any other stationary tick.
+//
+// `delayedEating` (default true) controls *which* tick's rest gets checked:
+//
+// - true (herbivores): last tick's rest (`prev.rest`), not this tick's. A
+//   bite and the move that lands on its tile happen in the very same sim
+//   tick (see sim/herbivore.ts), so the tick that reports the fresh
+//   rest===maxRest is still the one gliding *toward* the food -- the
+//   individual doesn't actually sit still digesting until the *following*
+//   tick, whose own incoming rest has already ticked down. Shifting the read
+//   back a tick lands the bite animation on the tick it's actually
+//   stationary. This is safe because the herbivore itself is still visibly
+//   there the whole time, just walking then settling in place.
+// - false (carnivores): this tick's own rest, undelayed. A kill removes the
+//   victim from the herbivore data in the very same tick it's caught, so
+//   there is no "wait for the following, now-stationary tick" to delay
+//   to -- there's nothing left to show sitting still. The catch is visible
+//   (drawPredations) for exactly the tick it happens on, so the predator's
+//   own bite pose needs to land on that same tick to match, not one tick
+//   later staring at nothing (10章, ユーザー報告).
 export function computeGlide(
   ids: Uint32Array,
   toX: Int16Array,
@@ -238,6 +264,7 @@ export function computeGlide(
   prevById: Map<number, GlideEntry>,
   boardWidth: number,
   maxRest: number,
+  delayedEating: boolean = true,
 ): {
   fromX: Array<number | undefined>;
   fromY: Array<number | undefined>;
@@ -261,8 +288,9 @@ export function computeGlide(
       fromX[k] = prev.x;
       fromY[k] = prev.y;
       f = facingFromDelta(tx, prev.x, boardWidth, prev.facing);
-      eating[k] = prev.rest === maxRest ? 1 : 0;
     }
+    const restForEating = delayedEating ? prev?.rest : tr;
+    eating[k] = restForEating === maxRest ? 1 : 0;
     facing[k] = f;
     nextById.set(id, { x: tx, y: ty, facing: f, rest: tr });
   }
@@ -349,33 +377,32 @@ function drawAnimatedHerbivores(
   }
 }
 
-// Stand-in for whichever herbivore a carnivore just caught -- the sim
-// doesn't report the victim's identity or pose to the renderer (it's already
-// removed by the time the tick is serialized), and a specific likeness
-// doesn't matter for a shape that's visibly shrinking away under its
-// predator. Shown for exactly the tick the carnivore spends stationary
-// digesting (carnEating[k], see computeGlide), fading and shrinking across
-// that tick's progress so it reads as being consumed, not just deleted.
+// The individual a carnivore caught this tick, fading and shrinking away
+// exactly where it was caught (sim/carnivore.ts's PredationEvent -- always
+// the catching carnivore's own arrival tile, since a catch only happens on
+// the tile a carnivore just moved onto). No carcass, no id, no pose data
+// survives a kill (see CarcassSnapshot's doc comment on why predation leaves
+// no carcass), so this uses a generic herbivore likeness rather than the
+// actual victim's -- same reasoning as the carcass sprite not needing to
+// match the deceased exactly.
 //
-// Drawn trailing *behind* the predator (opposite its facing), not dead
-// center under it: both sprites fill most of a tile, so a same-tile,
-// same-size ghost drawn first ended up completely hidden under the
-// predator's own opaque body for the entire bite -- there was never
-// actually anything visible to read as "being eaten" (confirmed with a
-// debug capture in the browser: no trace of the ghost at any point in an
-// eating tick). Offsetting it toward the tile the predator approached from
-// keeps it looking pinned to the kill while actually showing its shrinking
-// silhouette instead of a bite animation with nothing underneath it. Also
-// drawn *after* the predator (see the call site) so the still-overlapping
-// portion is alpha-blended instead of clipped away -- a half-tile offset
-// alone still left the predator-side half of the shape cut off, reading as
-// a stray half-body rather than a whole animal (10章, ユーザー報告).
-function drawPreyGhost(ctx: CanvasRenderingContext2D, sheet: SpriteSheet, ix: number, iy: number, progress: number, facing: number): void {
+// Drawn for the *same* tick the catch happens, at full scale/alpha at
+// progress 0 and gone by progress 1 -- not delayed to a later, now-
+// stationary tick the way the bite animation used to be (see computeGlide's
+// `delayedEating` doc comment for why that delay doesn't apply here: the
+// victim is already gone from the data the instant it's caught, so there's
+// no later tick to delay to). This also sidesteps the occlusion problem the
+// old same-tile ghost had: the predator is still gliding in from elsewhere
+// at progress 0 (when this is most opaque) and hasn't reached this tile yet,
+// and by the time it arrives at progress 1 this has already faded away --
+// the two are rarely both opaque and co-located at once. What overlap
+// remains is still drawn *after* the predator (see the call site) so it
+// alpha-blends instead of clipping.
+function drawPredation(ctx: CanvasRenderingContext2D, sheet: SpriteSheet, x: number, y: number, progress: number): void {
   const rect = animalSpriteRect(sheet, 0, 2);
   const size = sheet.tileSize;
-  const trail = -facing * size * 0.65;
-  const cx = ix * size + size / 2 + trail;
-  const cy = iy * size + size / 2 + size * 0.12;
+  const cx = x * size + size / 2;
+  const cy = y * size + size / 2;
   const scale = 1 - progress * 0.6;
   ctx.save();
   ctx.globalAlpha = Math.max(0, 1 - progress);
@@ -383,6 +410,12 @@ function drawPreyGhost(ctx: CanvasRenderingContext2D, sheet: SpriteSheet, ix: nu
   ctx.scale(scale, scale);
   ctx.drawImage(sheet.herbivoreCanvas, rect.sx, rect.sy, rect.sw, rect.sh, -size / 2, -size / 2, size, size);
   ctx.restore();
+}
+
+function drawPredations(r: RendererState, predations: PredationSnapshot, progress: number): void {
+  for (let k = 0; k < predations.count; k++) {
+    drawPredation(r.ctx, r.sheet, predations.x[k] ?? 0, predations.y[k] ?? 0, progress);
+  }
 }
 
 function drawAnimatedCarnivores(
@@ -403,21 +436,12 @@ function drawAnimatedCarnivores(
     const bucket = hungerToBucket(carnivores.hunger[k] ?? 0);
     const isEating = eating[k] === 1;
     const facing = r.carnFacing[k] ?? 1;
-    // Bite loop plays exactly while this individual is sitting on its kill
-    // (see the eating[k] doc comment above) -- previously there was no such
-    // signal at all, so carnivores never showed a visible bite.
+    // Bite loop plays exactly on the tick this individual lands a catch (see
+    // the eating[k] / delayedEating doc comments above) -- previously there
+    // was no such signal at all, so carnivores never showed a visible bite.
     const frame = pickAnimalFrame(baseFrame + k * 3, isEating);
     const rect = animalSpriteRect(r.sheet, frame, bucket);
     drawFacingSprite(r.ctx, r.sheet.carnivoreCanvas, rect, ix * r.sheet.tileSize, iy * r.sheet.tileSize, r.sheet.tileSize, facing);
-    // Ghost drawn *after* (on top of) the predator, not before/underneath --
-    // even offset half a tile behind it (see drawPreyGhost), the two still
-    // overlap for a good chunk of their footprint since the predator is
-    // stationary all through the bite. Drawing it first meant that
-    // overlapping half got clipped away under the predator's opaque sprite,
-    // so only a stray sliver of the silhouette ever peeked out -- reading as
-    // a "half body" rather than a herbivore. On top, the overlap is alpha
-    // blended instead of clipped, so the whole shrinking shape stays legible.
-    if (isEating) drawPreyGhost(r.ctx, r.sheet, ix, iy, progress, facing);
   }
 }
 
@@ -449,38 +473,16 @@ function addInterpolatedTiles(
   }
 }
 
-// drawPreyGhost draws up to 0.65 tile (plus its own half-tile width) behind
-// an eating carnivore, opposite its facing -- a tile the carnivore's own
-// interpolated position never covers (addInterpolatedTiles only ever adds
-// the current tile and its +1 neighbor, never -1, and the carnivore isn't
-// moving during the bite tick anyway). Without marking that tile too, it
-// never gets grass-repainted once the ghost stops being drawn there, so the
-// last frame of it stays stuck on screen looking like a half-visible,
-// unmoving animal for however many ticks pass until something else happens
-// to repaint that tile (10章, ユーザー報告).
-export function addGhostTiles(
-  tiles: Set<number>,
-  width: number,
-  height: number,
-  carnivores: CarnivoreSnapshot,
-  carnFacing: Int8Array,
-  carnEating: Uint8Array,
-): void {
-  for (let k = 0; k < carnivores.count; k++) {
-    if (carnEating[k] !== 1) continue;
-    const toX = carnivores.x[k] ?? 0;
-    const toY = carnivores.y[k] ?? 0;
-    const facing = carnFacing[k] ?? 1;
-    const gx = (((toX - facing * 0.65) % width) + width) % width;
-    const gy = (((toY + 0.12) % height) + height) % height;
-    const x0 = Math.floor(gx) % width;
-    const y0 = Math.floor(gy) % height;
-    const x1 = (x0 + 1) % width;
-    const y1 = (y0 + 1) % height;
-    tiles.add(y0 * width + x0);
-    tiles.add(y0 * width + x1);
-    tiles.add(y1 * width + x0);
-    tiles.add(y1 * width + x1);
+// A predation event is drawn at a single, fixed tile for the whole tick
+// (drawPredation never moves it, only shrinks/fades it) -- no interpolation
+// needed, just make sure that tile is in the repaint set for as long as
+// something's being drawn there, the same way a carcass or a gliding animal
+// would be.
+export function addPredationTiles(tiles: Set<number>, width: number, height: number, predations: PredationSnapshot): void {
+  for (let k = 0; k < predations.count; k++) {
+    const x = ((predations.x[k] ?? 0) % width + width) % width;
+    const y = ((predations.y[k] ?? 0) % height + height) % height;
+    tiles.add(y * width + x);
   }
 }
 
@@ -489,12 +491,13 @@ function overlayTileSet(
   herbivores: HerbivoreSnapshot,
   carnivores: CarnivoreSnapshot,
   carcasses: CarcassSnapshot,
+  predations: PredationSnapshot,
   progress: number,
 ): Set<number> {
   const tiles = new Set<number>();
   addInterpolatedTiles(tiles, r.width, r.height, herbivores.x, herbivores.y, r.herbFromX, r.herbFromY, herbivores.count, progress);
   addInterpolatedTiles(tiles, r.width, r.height, carnivores.x, carnivores.y, r.carnFromX, r.carnFromY, carnivores.count, progress);
-  addGhostTiles(tiles, r.width, r.height, carnivores, r.carnFacing, r.carnEating);
+  addPredationTiles(tiles, r.width, r.height, predations);
   // Most carcasses are fully at rest (fromX/fromY undefined -> interpAxis
   // just returns x/y, still only the one tile below), but one gliding in on
   // its first tick (age === 0) can overlap up to 2x2 tiles like a live
@@ -536,7 +539,7 @@ function paintOverlayFrame(r: RendererState, nowMs: number): void {
   // rather than waiting on a next tick that may not come for a while.
   if (progress >= 1 && r.pendingDirty.length > 0) commitPendingDirty(r);
 
-  const currOverlayTiles = overlayTileSet(r, r.herbivores, r.carnivores, r.carcasses, progress);
+  const currOverlayTiles = overlayTileSet(r, r.herbivores, r.carnivores, r.carcasses, r.predations, progress);
 
   const repaint = new Set<number>();
   for (const i of r.prevOverlayTiles) repaint.add(i);
@@ -546,6 +549,9 @@ function paintOverlayFrame(r: RendererState, nowMs: number): void {
   drawCarcasses(r, r.carcasses, progress);
   drawAnimatedHerbivores(r, r.herbivores, r.herbFromX, r.herbFromY, r.herbEating, progress, nowMs);
   drawAnimatedCarnivores(r, r.carnivores, r.carnFromX, r.carnFromY, r.carnEating, progress, nowMs);
+  // After the predators (see drawPredation's doc comment) so any remaining
+  // overlap alpha-blends instead of getting clipped by their opaque sprite.
+  drawPredations(r, r.predations, progress);
 
   r.prevOverlayTiles = currOverlayTiles;
 }
@@ -585,11 +591,12 @@ export function paintInit(
   r.herbivores = herbivores;
   r.carnivores = carnivores;
   r.carcasses = carcasses;
+  r.predations = emptyPredations; // nothing's been caught yet -- the sim hasn't ticked
   // No previous-tick positions yet, so everything appears at rest (no glide),
   // faces right, and shows no bite -- computeGlide does all three on its own
   // when prevById is empty.
   const herbGlide = computeGlide(herbivores.id, herbivores.x, herbivores.y, herbivores.rest, herbivores.count, new Map(), r.width, HERBIVORE_PARAMS.restTicksAfterEating);
-  const carnGlide = computeGlide(carnivores.id, carnivores.x, carnivores.y, carnivores.rest, carnivores.count, new Map(), r.width, CARNIVORE_PARAMS.restTicksAfterEating);
+  const carnGlide = computeGlide(carnivores.id, carnivores.x, carnivores.y, carnivores.rest, carnivores.count, new Map(), r.width, CARNIVORE_PARAMS.restTicksAfterEating, false);
   r.herbFromX = herbGlide.fromX;
   r.herbFromY = herbGlide.fromY;
   r.herbFacing = herbGlide.facing;
@@ -611,6 +618,7 @@ export function applyTick(
   herbivores: HerbivoreSnapshot,
   carnivores: CarnivoreSnapshot,
   carcasses: CarcassSnapshot,
+  predations: PredationSnapshot,
 ): number {
   // The previous tick's grass changes should have already committed at
   // progress 1 during its own glide (see paintOverlayFrame) -- but if a new
@@ -629,7 +637,7 @@ export function applyTick(
   // always starts from where *that same animal* actually was, even if a
   // same-tick death elsewhere reshuffled the array via swap-remove.
   const herbGlide = computeGlide(herbivores.id, herbivores.x, herbivores.y, herbivores.rest, herbivores.count, r.herbPrevById, r.width, HERBIVORE_PARAMS.restTicksAfterEating);
-  const carnGlide = computeGlide(carnivores.id, carnivores.x, carnivores.y, carnivores.rest, carnivores.count, r.carnPrevById, r.width, CARNIVORE_PARAMS.restTicksAfterEating);
+  const carnGlide = computeGlide(carnivores.id, carnivores.x, carnivores.y, carnivores.rest, carnivores.count, r.carnPrevById, r.width, CARNIVORE_PARAMS.restTicksAfterEating, false);
   r.herbFromX = herbGlide.fromX;
   r.herbFromY = herbGlide.fromY;
   r.herbFacing = herbGlide.facing;
@@ -643,6 +651,7 @@ export function applyTick(
   r.herbivores = herbivores;
   r.carnivores = carnivores;
   r.carcasses = carcasses;
+  r.predations = predations;
   r.tickStartMs = performance.now();
 
   // Paint immediately too (not just on the next animation frame) so a tick's

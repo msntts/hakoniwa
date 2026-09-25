@@ -1,18 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { addGhostTiles, carcassGlideFrom, computeGlide, type GlideEntry } from '../src/render/renderer';
-import type { CarcassSnapshot, CarnivoreSnapshot } from '../src/types';
+import { addPredationTiles, carcassGlideFrom, computeGlide, type GlideEntry } from '../src/render/renderer';
+import type { CarcassSnapshot, PredationSnapshot } from '../src/types';
 
 const boardWidth = 80;
 const boardHeight = 45;
 const noRest = new Uint8Array(4);
 
-function carnivoreSnapshot(entries: Array<{ x: number; y: number }>): CarnivoreSnapshot {
+function predationSnapshot(entries: Array<{ x: number; y: number }>): PredationSnapshot {
   return {
     x: Int16Array.from(entries.map((e) => e.x)),
     y: Int16Array.from(entries.map((e) => e.y)),
-    hunger: new Float32Array(entries.length),
-    id: Uint32Array.from(entries.map((_, i) => i)),
-    rest: new Uint8Array(entries.length),
     count: entries.length,
   };
 }
@@ -140,6 +137,40 @@ describe('computeGlide', () => {
     const third = computeGlide(ids, toX, toY, new Uint8Array([0]), 1, second.nextById, boardWidth, maxRest);
     expect(third.eating[0]).toBe(0);
   });
+
+  it('flags eating from *this* tick\'s rest when delayedEating is false, not the previous tick\'s', () => {
+    // Carnivores (delayedEating: false): a catch removes the victim from the
+    // data in the very same tick it's caught, so there's no later,
+    // now-stationary tick to delay the bite animation to the way herbivores
+    // do -- the bite has to land on the tick that reports the fresh
+    // rest===maxRest directly, even though (per the previous test's
+    // semantics) that's the very tick the predator is still gliding in.
+    const prevById = new Map<number, GlideEntry>([
+      [1, { x: 5, y: 5, facing: 1, rest: 0 }], // was not resting last tick
+    ]);
+    const ids = new Uint32Array([1]);
+    const toX = new Int16Array([6]);
+    const toY = new Int16Array([5]);
+    const rest = new Uint8Array([1]); // just landed a catch this tick
+
+    const { eating } = computeGlide(ids, toX, toY, rest, 1, prevById, boardWidth, 1, false);
+
+    expect(eating[0]).toBe(1);
+  });
+
+  it('with delayedEating false, a freshly born individual (no history) can still flag eating', () => {
+    // Unlike the delayed case (a birth can't have "last tick's rest" at
+    // all), the undelayed case only needs *this* tick's rest, which every
+    // individual reports regardless of whether it has a previous-tick entry.
+    const ids = new Uint32Array([99]);
+    const toX = new Int16Array([5]);
+    const toY = new Int16Array([5]);
+    const rest = new Uint8Array([1]);
+
+    const { eating } = computeGlide(ids, toX, toY, rest, 1, new Map(), boardWidth, 1, false);
+
+    expect(eating[0]).toBe(1);
+  });
 });
 
 describe('carcassGlideFrom', () => {
@@ -178,47 +209,35 @@ describe('carcassGlideFrom', () => {
   });
 });
 
-describe('addGhostTiles', () => {
-  it('marks the tile the ghost trails into, not just the tiles the carnivore itself covers', () => {
-    // Facing right (1): drawPreyGhost trails left (opposite facing), so the
-    // ghost's footprint reaches into the column *behind* the carnivore's own
-    // tile -- a column addInterpolatedTiles never adds for a carnivore that
-    // isn't moving (it only ever adds the current tile and its +1 neighbor,
-    // never -1). Without this, that tile never gets grass-repainted once the
-    // ghost stops being drawn there, leaving a stale frame on screen (10章,
-    // ユーザー報告：「半身だけの草食動物がすうtick残ってる」).
-    const carnivores = carnivoreSnapshot([{ x: 5, y: 5 }]);
-    const facing = Int8Array.from([1]);
-    const eating = Uint8Array.from([1]);
+describe('addPredationTiles', () => {
+  it('marks the exact tile a catch happened on', () => {
+    const predations = predationSnapshot([{ x: 12, y: 7 }]);
     const tiles = new Set<number>();
 
-    addGhostTiles(tiles, boardWidth, boardHeight, carnivores, facing, eating);
+    addPredationTiles(tiles, boardWidth, boardHeight, predations);
 
-    // Ghost center lands at x = 5 - 0.65 = 4.35 -> covers columns 4 and 5.
-    expect(tiles.has(5 * boardWidth + 4)).toBe(true);
-    expect(tiles.has(5 * boardWidth + 5)).toBe(true);
+    expect(tiles.has(7 * boardWidth + 12)).toBe(true);
+    expect(tiles.size).toBe(1);
   });
 
-  it('adds nothing for a carnivore that is not currently eating', () => {
-    const carnivores = carnivoreSnapshot([{ x: 5, y: 5 }]);
-    const facing = Int8Array.from([1]);
-    const eating = Uint8Array.from([0]);
+  it('adds nothing when there were no catches this tick', () => {
+    const predations = predationSnapshot([]);
     const tiles = new Set<number>();
 
-    addGhostTiles(tiles, boardWidth, boardHeight, carnivores, facing, eating);
+    addPredationTiles(tiles, boardWidth, boardHeight, predations);
 
     expect(tiles.size).toBe(0);
   });
 
   it('wraps around the torus edge instead of landing off-board', () => {
-    const carnivores = carnivoreSnapshot([{ x: 0, y: 5 }]);
-    const facing = Int8Array.from([1]); // trails left off the x=0 edge
-    const eating = Uint8Array.from([1]);
+    // Not expected in practice (a catch tile always comes from a real,
+    // already-wrapped board coordinate), but the wrap-safe modulo here
+    // should never produce a negative or out-of-range tile index regardless.
+    const predations = predationSnapshot([{ x: -1, y: -1 }]);
     const tiles = new Set<number>();
 
-    addGhostTiles(tiles, boardWidth, boardHeight, carnivores, facing, eating);
+    addPredationTiles(tiles, boardWidth, boardHeight, predations);
 
-    // Ghost center lands at x = 0 - 0.65 -> wraps to boardWidth - 0.65, i.e. column boardWidth-1.
-    expect(tiles.has(5 * boardWidth + (boardWidth - 1))).toBe(true);
+    expect(tiles.has((boardHeight - 1) * boardWidth + (boardWidth - 1))).toBe(true);
   });
 });

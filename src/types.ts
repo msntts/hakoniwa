@@ -61,6 +61,21 @@ export interface DirtyTile {
   height: number;
 }
 
+// One entry per herbivore a carnivore caught this tick, at the tile it was
+// caught on (see sim/carnivore.ts's PredationEvent). No id, no species field
+// -- a kill leaves no carcass (see CarcassSnapshot's doc comment), so this is
+// the only signal the renderer gets that "an animal was eaten here, right
+// now" -- it draws a generic herbivore likeness fading away at that exact
+// position, synced to *this* tick (not delayed to the next one, unlike the
+// bite-animation rest signal above -- a caught individual is already gone
+// from herbivores by the time this message is built, so there's no "wait
+// until it's actually standing still" tick to delay to).
+export interface PredationSnapshot {
+  x: Int16Array;
+  y: Int16Array;
+  count: number;
+}
+
 export type MainToWorker =
   | { type: 'init'; width: number; height: number; tickMs: number; epochMs: number; seed?: number }
   | { type: 'start' }
@@ -86,5 +101,6 @@ export type WorkerToMain =
       herbivores: HerbivoreSnapshot;
       carnivores: CarnivoreSnapshot;
       carcasses: CarcassSnapshot;
+      predations: PredationSnapshot;
     }
   | { type: 'epoch'; epochIndex: number };

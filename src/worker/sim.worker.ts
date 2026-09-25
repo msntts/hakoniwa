@@ -1,5 +1,6 @@
+import type { PredationEvent } from '../sim/carnivore';
 import { createSimState, tick, type SimState } from '../sim/loop';
-import type { CarcassSnapshot, CarnivoreSnapshot, HerbivoreSnapshot, MainToWorker, WorkerToMain } from '../types';
+import type { CarcassSnapshot, CarnivoreSnapshot, HerbivoreSnapshot, MainToWorker, PredationSnapshot, WorkerToMain } from '../types';
 
 let state: SimState | null = null;
 let intervalId: ReturnType<typeof setInterval> | null = null;
@@ -44,6 +45,14 @@ function carcassSnapshot(s: SimState): CarcassSnapshot {
   };
 }
 
+function predationSnapshot(events: PredationEvent[]): PredationSnapshot {
+  return {
+    x: Int16Array.from(events, (e) => e.x),
+    y: Int16Array.from(events, (e) => e.y),
+    count: events.length,
+  };
+}
+
 function stopLoop(): void {
   if (intervalId !== null) {
     clearInterval(intervalId);
@@ -63,6 +72,7 @@ function startLoop(): void {
       herbivores: herdSnapshot(state),
       carnivores: predatorSnapshot(state),
       carcasses: carcassSnapshot(state),
+      predations: predationSnapshot(result.predations),
     });
     if (result.epoch !== undefined) {
       post({ type: 'epoch', epochIndex: result.epoch });

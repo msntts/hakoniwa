@@ -91,13 +91,27 @@ function buildHerbivoreTileBuckets(h: HerbivoreState, board: Board): Map<number,
   return buckets;
 }
 
+// One entry per herbivore caught this tick, at the tile it was caught on
+// (== the catching carnivore's own bestX/bestY, since a catch only ever
+// happens on the tile the carnivore just moved onto). No carcass is spawned
+// for a kill (the body's nutrients go to the predator, not the ground -- see
+// CARCASS_SPECIES usage above), so this is the *only* record of the event;
+// the renderer uses it to draw the eaten individual fading away exactly
+// where -- and exactly when -- the catch happened, instead of inferring it
+// indirectly from the predator's own rest state (see render/renderer.ts and
+// docs/manual.html section 5/10 for why that indirection was the bug).
+export interface PredationEvent {
+  x: number;
+  y: number;
+}
+
 export function stepCarnivores(
   c: CarnivoreState,
   herd: HerbivoreState,
   carcasses: CarcassState,
   board: Board,
   rng: () => number,
-): void {
+): PredationEvent[] {
   const {
     hungerGainPerTick,
     predationRelief,
@@ -112,6 +126,7 @@ export function stepCarnivores(
   const deaths: number[] = [];
   const births: Array<[number, number]> = [];
   const eatenHerbivoreIndices: number[] = [];
+  const predations: PredationEvent[] = [];
 
   const carcassTiles = new Set<number>();
   for (let k = 0; k < carcasses.count; k++) {
@@ -165,6 +180,7 @@ export function stepCarnivores(
       if (bucket && bucket.length > 0) {
         const preyIndex = bucket.pop()!; // claims it -- no other carnivore can eat it this tick
         eatenHerbivoreIndices.push(preyIndex);
+        predations.push({ x: bestX, y: bestY });
         hunger -= predationRelief;
         c.rest[i] = restTicksAfterEating;
       }
@@ -201,4 +217,6 @@ export function stepCarnivores(
   for (const [x, y] of births) {
     spawnCarnivore(c, x, y, CARNIVORE_PARAMS.initialHunger);
   }
+
+  return predations;
 }

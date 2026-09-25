@@ -39,7 +39,7 @@ worker.onmessage = (ev: MessageEvent<WorkerToMain>) => {
       worker.postMessage({ type: 'start' });
       break;
     case 'tick': {
-      const repainted = applyTick(renderer, msg.dirty, msg.herbivores, msg.carnivores, msg.carcasses);
+      const repainted = applyTick(renderer, msg.dirty, msg.herbivores, msg.carnivores, msg.carcasses, msg.predations);
       hudTick.textContent = `tick: ${msg.tickCount}`;
       hudDirty.textContent = `dirty: ${repainted} / ${BOARD_WIDTH * BOARD_HEIGHT}`;
       hudPop.textContent = `herbivores: ${msg.herbivores.count} / carnivores: ${msg.carnivores.count}`;

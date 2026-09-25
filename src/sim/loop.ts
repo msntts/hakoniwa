@@ -1,6 +1,6 @@
 import type { Board } from './board';
 import { createCarcassState, stepCarcasses, type CarcassState } from './carcass';
-import { createCarnivoreState, seedCarnivores, stepCarnivores, type CarnivoreState } from './carnivore';
+import { createCarnivoreState, seedCarnivores, stepCarnivores, type CarnivoreState, type PredationEvent } from './carnivore';
 import { createGrassState, deriveHeightAndColor, seedGrass, stepGrass, type GrassState } from './grass';
 import { createHerbivoreState, seedHerbivores, stepHerbivores, type HerbivoreState } from './herbivore';
 import { CARNIVORE_PARAMS, HERBIVORE_PARAMS } from './params';
@@ -74,13 +74,14 @@ export function createSimState(
 
 export interface TickResult {
   dirty: DirtyTile[];
+  predations: PredationEvent[];
   epoch?: number;
 }
 
 export function tick(state: SimState): TickResult {
   stepGrass(state.grass, state.board);
   stepHerbivores(state.herd, state.grass, state.carcasses, state.board, state.rng);
-  stepCarnivores(state.predators, state.herd, state.carcasses, state.board, state.rng);
+  const predations = stepCarnivores(state.predators, state.herd, state.carcasses, state.board, state.rng);
   stepCarcasses(state.carcasses, state.grass, state.board);
   const dirty = deriveHeightAndColor(state.grass, state.board);
 
@@ -94,5 +95,5 @@ export function tick(state: SimState): TickResult {
     epoch = state.epochCount;
   }
 
-  return { dirty, epoch };
+  return { dirty, predations, epoch };
 }

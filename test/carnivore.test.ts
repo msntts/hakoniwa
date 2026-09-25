@@ -19,7 +19,7 @@ describe('stepCarnivores', () => {
     const startHunger = 0.6;
     spawnCarnivore(predators, 2, 2, startHunger);
 
-    stepCarnivores(predators, herd, carcasses, board, noRandom);
+    const predations = stepCarnivores(predators, herd, carcasses, board, noRandom);
 
     expect(herd.count).toBe(0); // eaten
     expect(predators.count).toBe(1);
@@ -29,6 +29,12 @@ describe('stepCarnivores', () => {
     );
     expect(expectedHunger).toBeGreaterThan(CARNIVORE_PARAMS.reproHungerThreshold); // sanity check on the test setup itself
     expect(predators.hunger[0]).toBeCloseTo(expectedHunger, 5);
+    // No carcass is left behind by a kill (the body's nutrients go to the
+    // predator, not the ground), so this is the *only* record of the catch --
+    // the renderer uses it to draw the eaten individual fading away exactly
+    // where it happened, in the same tick, instead of inferring it
+    // indirectly from the predator's own rest state (10章).
+    expect(predations).toEqual([{ x: 2, y: 2 }]);
   });
 
   it('moves toward a neighboring tile with prey when its own tile has none', () => {
@@ -38,11 +44,15 @@ describe('stepCarnivores', () => {
     const carcasses = createCarcassState(10);
     spawnCarnivore(predators, 2, 2, 0.5);
 
-    stepCarnivores(predators, herd, carcasses, board, noRandom);
+    const predations = stepCarnivores(predators, herd, carcasses, board, noRandom);
 
     expect(predators.x[0]).toBe(3);
     expect(predators.y[0]).toBe(2);
     expect(herd.count).toBe(0); // caught after moving onto its tile
+    // The catch happens on the tile the predator moved *to*, not where it
+    // started -- the renderer needs this to draw the eaten individual fading
+    // away at the right spot, not back where the predator used to be.
+    expect(predations).toEqual([{ x: 3, y: 2 }]);
   });
 
   it('only lets one carnivore claim a given herbivore per tick', () => {
