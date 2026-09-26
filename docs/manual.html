@@ -114,7 +114,7 @@
 <p>80×45 タイルのトーラス（端がつながった）盤面で、<strong>草・草食獣・肉食獣・死骸・土壌養分</strong>の5つが相互作用するリアルタイムシミュレーション。プレイヤーの介入（神のダイヤル・賭け）はまだ無く、今は「生態系が放っておくとどう振る舞うか」を観察する段階。</p>
 
 <div class="grid2">
-  <div class="card"><h4>時間</h4>1 tick = 2000ms。5 tick = 1 エポック（10秒、実時間は変わらない）。エポックは現状カウンタだけで、何も起きない（将来の賭け精算・気候抽選のフック）。</div>
+  <div class="card"><h4>時間</h4>1 tick = 2000ms（等倍時）。5 tick = 1 エポック（等倍時。エポックは常に実10秒ごとに進む——倍速を変えても、tick 1個が実時間何msを表すかが変わるだけで、エポックは壁時計に同期し続ける。詳細は6章・<code>src/types.ts</code>の速度定数のコメント）。エポックは現状カウンタだけで、何も起きない（将来の賭け精算・気候抽選のフック）。倍速UI（HUDの<code>-</code>/<code>+</code>、0.5x〜4.0x、0.5刻み）で実行中に tick の実時間間隔を変えられる（6章）。</div>
   <div class="card"><h4>盤面</h4>80×45 = 3,600 タイル。1タイル 16px。上下左右が折り返してつながる。</div>
   <div class="card"><h4>初期状態</h4>草はほぼ全面に生えた状態から始まり、草食獣150・肉食獣12がランダム配置。乱数シードは起動時刻（UIからの指定は不可）。</div>
   <div class="card"><h4>典型的な推移</h4>草食獣が爆発的に増える → 草を食べ尽くす／捕食者が増えすぎる → 崩壊 → 生き残りと土壌から回復、の波。絶滅は普通に起きる。</div>
@@ -346,7 +346,7 @@ render/renderer.ts 差分描画          ◀─ tick ─  sim/loop.ts      tick(
                                                sim/board.ts     座標・折り返し・近傍</pre>
 <ul>
   <li><strong>モジュール境界：</strong>草は動物を知らない。草食獣は草を「引数として」受け取って操作する。肉食獣は草食獣を引数として受け取る。上の段が下の段に依存し、逆は無い。気候などを足すときもこの向きを守る。</li>
-  <li><strong>メッセージ：</strong><code>src/types.ts</code> の <code>MainToWorker</code> / <code>WorkerToMain</code>。毎tick、草の差分と各種族の位置が送られる。草食獣・肉食獣のスナップショットは座標・空腹度に加えて表示専用の安定id（<code>id</code>、4.3/4.4章）を持つ。死骸のスナップショットは座標・経過tickに加えて発生元の種（<code>species</code>）と、発生tickだけ意味を持つ移動前座標（<code>fromX</code>/<code>fromY</code>、4.5章）も持つ。<code>predations</code>（<code>PredationSnapshot</code>）はそのtickに成立した捕食の座標だけを持つ1tick限りのリストで、id・種別は無い——死骸と違って実体が残らないイベントなので、毎tick丸ごと新しいリストに入れ替わる（表示専用、5章）。位置はtickの瞬間の着地点であって、その間の補間はメインスレッド側（renderer.ts）の仕事。<code>set-tick-rate</code> は定義済みだがUIは無く、変更してもrenderer側の補間時間（<code>DEFAULT_TICK_MS</code> 起動時の値で固定）には反映されない。</li>
+  <li><strong>メッセージ：</strong><code>src/types.ts</code> の <code>MainToWorker</code> / <code>WorkerToMain</code>。毎tick、草の差分と各種族の位置が送られる。草食獣・肉食獣のスナップショットは座標・空腹度に加えて表示専用の安定id（<code>id</code>、4.3/4.4章）を持つ。死骸のスナップショットは座標・経過tickに加えて発生元の種（<code>species</code>）と、発生tickだけ意味を持つ移動前座標（<code>fromX</code>/<code>fromY</code>、4.5章）も持つ。<code>predations</code>（<code>PredationSnapshot</code>）はそのtickに成立した捕食の座標だけを持つ1tick限りのリストで、id・種別は無い——死骸と違って実体が残らないイベントなので、毎tick丸ごと新しいリストに入れ替わる（表示専用、5章）。位置はtickの瞬間の着地点であって、その間の補間はメインスレッド側（renderer.ts）の仕事。<code>set-tick-rate</code>（<code>{ ms }</code>、tickの実時間間隔）はHUDの倍速UI（<code>-</code>/<code>+</code>、<code>main.ts</code>）から送られ、Worker側の<code>SimState.tickIntervalMs</code>（setIntervalの遅延そのもの）と、メインスレッド側の<code>RendererState.tickDurationMs</code>（<code>render/renderer.ts</code>の<code>setTickDuration</code>、from→toの補間が1周期とみなす長さ）を同時に更新する——どちらか一方だけ変えると、補間がtickの実際の間隔より早く/遅く終わってカクつくため、2つは常にペアで動かす。倍率（0.5x〜4.0x、0.5刻み、<code>src/types.ts</code>の<code>SPEED_MIN</code>/<code>SPEED_MAX</code>/<code>SPEED_STEP</code>）から実際の<code>ms</code>への変換は<code>src/speed.ts</code>の<code>speedToTickMs</code>（<code>DEFAULT_TICK_MS / speed</code>）。<code>tickIntervalMs</code>は<code>tick()</code>内で<code>msSinceEpochStart</code>への加算量としても使われる（3章）ため、setIntervalの遅延と加算量が常に同じ値になり、結果としてエポックは倍率によらず実10秒ごとに進み続ける（1章）——変わるのはエポックあたりのtick数の方。</li>
   <li><strong>配信：</strong><code>main</code> に push すると GitHub Actions が typecheck・test・build して GitHub Pages に公開（<code>https://msntts.github.io/hakoniwa/</code>）。</li>
 </ul>
 
@@ -397,7 +397,7 @@ render/renderer.ts 差分描画          ◀─ tick ─  sim/loop.ts      tick(
   <tr><td>分解者レイヤーの表示切り替え</td><td>未実装。土壌養分は画面に出ない</td></tr>
   <tr><td>草食獣→捕食者の「餌+、遅延」</td><td>捕食の効果は即時。遅延は死骸の分解だけ</td></tr>
   <tr><td>背景色（量）と文字（構造）の独立</td><td>両方 biomass から決まる</td></tr>
-  <tr><td>倍速・事後ログ</td><td>プロトコルに <code>set-tick-rate</code> があるだけ</td></tr>
+  <tr><td>倍速・事後ログ</td><td>倍速は実装（0.5x〜4.0x、0.5刻み、HUDの<code>-</code>/<code>+</code>、6章）。事後ログ（賭けの精算・振り返り）は未実装</td></tr>
   <tr><td>種の形質（体格・生息層・耐性）、進化、形質による捕食関係の導出</td><td>未実装。2種は固定</td></tr>
   <tr><td>海と陸、繋ぎ役の種</td><td>未実装</td></tr>
   <tr><td>保存（localStorage / IndexedDB）、図鑑</td><td>未実装</td></tr>
@@ -412,7 +412,7 @@ render/renderer.ts 差分描画          ◀─ tick ─  sim/loop.ts      tick(
   <li><strong>視野は隣1マスだけ。</strong><code>HERBIVORE_PARAMS.visionRadius</code> は定義されているが使われていない。</li>
   <li><strong>無性生殖。</strong>検討の上、現段階では雌雄を入れないと判断（10章）。</li>
   <li><strong>質量非保存</strong>（2章）。散布と死骸が、実質的な外部からの養分流入になっている。</li>
-  <li><strong>長時間の検証手段が無い。</strong>回復のような数千tickの挙動は、<code>DEFAULT_TICK_MS</code> を一時的に 20 に書き換えて早送りして確認している。倍速UIか、ヘッドレスで回す検証スクリプトがあると良い。</li>
+  <li><strong>長時間の検証手段が弱い。</strong>倍速UI（6章）で最大4倍までは実行中に早送りできるようになったが、回復のような数千tickの挙動を追うにはまだ遅い（4倍でも1tick=500ms）。<code>DEFAULT_TICK_MS</code> を一時的に書き換える早送りは今も併用している。ヘッドレスで回す検証スクリプトがあると良い。</li>
   <li><strong>乱数シードを固定できない。</strong>同じ条件の再現・比較ができない。</li>
   <li><strong>1回の観察に依存した調整がある。</strong>実機確認の多くは1回の試行。シードによって結果が変わりうる。</li>
 </ul>
@@ -423,6 +423,11 @@ render/renderer.ts 差分描画          ◀─ tick ─  sim/loop.ts      tick(
 <div class="table-wrap">
 <table>
   <tr><th>判断</th><th>理由・経緯</th></tr>
+  <tr><td>倍速UI（0.5x〜4.0x、0.5刻み）を追加。既存の <code>set-tick-rate</code> プロトコル（定義だけあってUIが無い状態、8章）を初めて使う実装</td><td>ユーザー指示：「倍速モードを搭載したい。0.5倍速刻みぐらいで早めたりおそめたりしたい」。<br><br>
+  <strong>採寸：</strong>既存の<code>set-tick-rate</code>は<code>SimState.tickIntervalMs</code>を書き換えるだけで、これはWorkerの<code>setInterval</code>の遅延と、<code>tick()</code>が毎tick<code>msSinceEpochStart</code>に加算する量の両方を兼ねている（同じ変数）。そのため倍率を変えても<strong>エポックの実時間換算（10秒/エポック）は変わらない</strong>——setIntervalの間隔が縮む/伸びるのと同じ比率でエポックあたりのtick数が増減し、実時間では相殺される（1tick=1000msでも4000msでも、5tick分・20tick分の実時間はどちらも10秒）。変わるのはtickそのもの（空腹度・移動など）が実時間あたり何回進むか。当初これを設計ミスかと疑ったが、1章の「10秒、実時間は変わらない」という既存の記述と整合しており、意図した挙動と判断した。<br><br>
+  <strong>もう1つの発見：</strong>6章に「<code>set-tick-rate</code>は定義済みだがUIは無く、変更してもrenderer側の補間時間（<code>DEFAULT_TICK_MS</code>起動時の値で固定）には反映されない」という既知のギャップが明記されていた。<code>RendererState.tickDurationMs</code>（from→toの補間が1周期とみなす長さ、5章）は<code>createRenderer</code>呼び出し時の値のまま更新されず、倍速をWorker側だけに適用すると「tickは速く/遅く届くのに、個体の滑り演出は元の速度のまま」という不一致が起きる実装になっていた。<br><br>
+  <strong>実装：</strong>(1) <code>src/speed.ts</code>に<code>clampSpeed</code>（0.5刻みへの丸め＋範囲クランプ、浮動小数の誤差対策込み）と<code>speedToTickMs</code>（<code>DEFAULT_TICK_MS / speed</code>）を純関数として切り出し、単体テスト化（<code>test/speed.test.ts</code>）。(2) <code>render/renderer.ts</code>に<code>setTickDuration</code>を追加し、<code>main.ts</code>の倍速変更が<code>set-tick-rate</code>のWorker送信と<code>RendererState.tickDurationMs</code>の更新を必ずペアで行うようにして、上記のギャップを解消。(3) HUDに<code>-</code>/<code>+</code>ボタンと現在倍率の表示を追加、範囲の端では該当ボタンを<code>disabled</code>に。<br><br>
+  <strong>検証：</strong><code>npm run typecheck</code>・<code>npm run test</code>（65件）は通過。実機では、開発サーバーをブラウザで開き、2.0xにしてから4秒強待って<code>tick</code>表示の増分を計測 → 4tick分（期待値どおり1tick≈1000ms）。0.5xでも同様に約4.7秒で1tickのみ進行（期待値1tick=4000ms、待機分の誤差を差し引けば整合）。範囲の下限（0.5x）で<code>-</code>ボタンが<code>disabled</code>になることも確認。上限（4.0x）・一時停止中に倍率を変えて再開した場合の見た目（補間が新しい速さに追従するか）は未確認</td></tr>
   <tr><td>マニュアル・<code>params.ts</code>コメントの実時間換算（秒・エポック）を、1 tick 500ms→2000ms（10章の該当判断）に合わせて再計算</td><td>ユーザー指示：「サーバーサイドと相談して現状のソースコードとマニュアルの乖離がないか、特に決定事項なんかこれまでの思考みたいなところのあれがあると思うんだけど、そこは徹底的に見てください。2、3回ループで確認して」。独立したサブエージェントに3パス（①マニュアル全記述の棚卸し→②ソースと1件ずつ照合→③矛盾リストを持って全体を再読）で監査を依頼した。<br><br>
   見つかったのは1系統の問題：<strong>1 tick を 500ms→2000ms に変更した際（10章「1 tick 500ms → 2000ms…」の判断）、tick数そのものやパラメータの値は正しいまま据え置かれたが、そこから導かれる実時間・エポック数の換算だけが古い数値のまま各所に残っていた</strong>。具体的には4箇所：(1) 4.5章の<code>decayTicks</code>「約5秒」→実際は10tick×2000ms=20秒。しかもこの行自体は今回のセッション中（死骸のfromX/fromY修正時）に新しく書いたものだが、<code>params.ts</code>側の古いコメント（<code>// ~5s</code>、500ms時代の名残）をそのまま転記してしまっていた。(2) 4.1章ピラミッド表の寿命「200（約100秒）」「600（約300秒）」→実際は200tick×2000ms=400秒、600tick×2000ms=1200秒（20分）。(3) 3章「エポックの判定（20 tickごと）」→<code>DEFAULT_EPOCH_MS</code>(10000)/<code>DEFAULT_TICK_MS</code>(2000)=5tickごとが正しく、しかも1章の時間カード（「5 tick = 1 エポック」）と同じ文書内で矛盾していた。(4) 4.3章「飢えだけで死ぬまで最短20tick（約1エポック）」→現在は5tick/エポックなので20tickは4エポック。(2)(3)はマニュアルの最初のコミット（tick変更と同日）に由来し、隣接する1章は変更時に直されたのにこの2箇所だけ直し漏れていた。(4)は翌日以降、この3章のエポック定義の誤りに気づかないまま別の理由で編集されていた。<br><br>
   併せて、この数値の出どころだった <code>src/sim/params.ts</code> のコメント（<code>hungerGainPerTick</code>「~1 epoch」、<code>lifespanTicks</code>「2000 ticks (1000s)」「200 ticks (100s / ~10 epochs)」、<code>decayTicks</code>「~5s」）も同じ500ms時代の換算のまま残っていたため、マニュアルと同じ計算で修正した。<br><br>
