@@ -1,7 +1,17 @@
 import type { Board } from './board';
-import { idx, NEIGHBOR_OFFSETS_8, wrap } from './board';
+import { idx, NEIGHBOR_OFFSETS_8, torusDelta, wrap } from './board';
 import type { DirtyTile } from '../types';
 import { GRASS_PARAMS } from './params';
+
+// A single seeded meadow -- see seedGrass. Exposed so callers that place
+// other things at start (e.g. seedHerbivores clustering herds near food
+// instead of scattering them board-wide) can reuse the same centers rather
+// than inventing their own, unrelated ones.
+export interface GrassPatch {
+  x: number;
+  y: number;
+  radius: number;
+}
 
 export interface GrassState {
   biomass: Float32Array;
@@ -28,26 +38,51 @@ export function createGrassState(board: Board): GrassState {
   };
 }
 
-export function seedGrass(state: GrassState, board: Board, rng: () => number): void {
-  const n = board.width * board.height;
-  for (let i = 0; i < n; i++) {
-    // Mostly moderate noise, with a few deliberately sparse-but-tall vs
-    // dense-but-low patches so the two visual axes are distinguishable at a glance.
-    const r = rng();
-    let biomass: number;
-    if (r < 0.1) {
-      biomass = 0.15 + rng() * 0.1; // sparse but will still cross a low height threshold
-    } else if (r < 0.2) {
-      biomass = 0.75 + rng() * 0.2; // dense and tall
-    } else {
-      biomass = 0.3 + rng() * 0.5;
-    }
-    state.biomass[i] = biomass;
-    // Existing grass implies some soil fertility already built up before the
-    // player arrived, but not a full bank -- further growth still has to be
-    // earned back through the herbivore/decomposer cycle.
-    state.fertility[i] = biomass * 0.5;
+// Scatters patchCount round meadows over the board -- independent per-tile
+// noise (the previous approach) reads as a single undifferentiated lawn
+// from the very first frame, with no spatial story for a herd to react to.
+// A tile's biomass is the *strongest* nearby patch's falloff (not a sum --
+// two overlapping patches make one bigger meadow, not a denser one) plus a
+// small independent jitter, so ground far from every patch center stays
+// close to bare. Returns the patch centers so other seeding (see
+// seedHerbivores) can start life near food instead of anywhere on the board.
+export function seedGrass(state: GrassState, board: Board, rng: () => number): GrassPatch[] {
+  const { patchCount, patchRadiusMin, patchRadiusMax, patchPeakMin, patchPeakMax, patchNoise, capacity } = GRASS_PARAMS;
+
+  const patches: Array<GrassPatch & { peak: number }> = [];
+  for (let p = 0; p < patchCount; p++) {
+    patches.push({
+      x: Math.floor(rng() * board.width),
+      y: Math.floor(rng() * board.height),
+      radius: patchRadiusMin + rng() * (patchRadiusMax - patchRadiusMin),
+      peak: patchPeakMin + rng() * (patchPeakMax - patchPeakMin),
+    });
   }
+
+  for (let y = 0; y < board.height; y++) {
+    for (let x = 0; x < board.width; x++) {
+      let biomass = 0;
+      for (const patch of patches) {
+        const dx = torusDelta(x, patch.x, board.width);
+        const dy = torusDelta(y, patch.y, board.height);
+        const t = Math.sqrt(dx * dx + dy * dy) / patch.radius;
+        if (t >= 1) continue; // outside this patch's reach
+        // Quadratic falloff: full density at the center, tapering smoothly
+        // (not linearly) to bare right at the patch's edge.
+        const falloff = 1 - t * t;
+        biomass = Math.max(biomass, patch.peak * falloff);
+      }
+      biomass = Math.max(0, Math.min(capacity, biomass + (rng() - 0.5) * 2 * patchNoise));
+      const i = idx(board, x, y);
+      state.biomass[i] = biomass;
+      // Existing grass implies some soil fertility already built up before
+      // the player arrived, but not a full bank -- further growth still has
+      // to be earned back through the herbivore/decomposer cycle.
+      state.fertility[i] = biomass * 0.5;
+    }
+  }
+
+  return patches;
 }
 
 export function depositFertility(state: GrassState, i: number, amount: number): void {

@@ -1,7 +1,7 @@
 import type { Board } from './board';
 import { idx, NEIGHBOR_OFFSETS_8, wrap } from './board';
 import { CARCASS_SPECIES, spawnCarcass, type CarcassState } from './carcass';
-import { depositFertility, grazeTile, type GrassState } from './grass';
+import { depositFertility, grazeTile, type GrassPatch, type GrassState } from './grass';
 import { GRASS_PARAMS, HERBIVORE_PARAMS } from './params';
 
 export interface HerbivoreState {
@@ -67,10 +67,24 @@ export function removeHerbivoreAt(h: HerbivoreState, index: number): void {
   h.count--;
 }
 
-export function seedHerbivores(h: HerbivoreState, board: Board, count: number, rng: () => number): void {
+// Scattered across the same meadows grass seeded (see grass.ts's
+// GrassPatch/seedGrass), not independently board-wide -- a newly-placed herd
+// starting on bare ground with no food anywhere nearby made no sense next to
+// a board that already has real grass patches to start in/near. Each
+// individual picks one patch at random and lands somewhere inside its
+// radius (uniform over the disc's *area*, via sqrt(rng()) -- plain rng()
+// would bunch individuals up near the exact center).
+export function seedHerbivores(h: HerbivoreState, board: Board, count: number, rng: () => number, patches: GrassPatch[]): void {
   for (let n = 0; n < count; n++) {
-    const x = Math.floor(rng() * board.width);
-    const y = Math.floor(rng() * board.height);
+    const patch = patches[Math.floor(rng() * patches.length)];
+    let x = Math.floor(rng() * board.width);
+    let y = Math.floor(rng() * board.height);
+    if (patch) {
+      const angle = rng() * Math.PI * 2;
+      const r = Math.sqrt(rng()) * patch.radius;
+      x = wrap(Math.round(patch.x + Math.cos(angle) * r), board.width);
+      y = wrap(Math.round(patch.y + Math.sin(angle) * r), board.height);
+    }
     spawnHerbivore(h, x, y, HERBIVORE_PARAMS.initialHunger);
   }
 }
