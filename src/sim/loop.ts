@@ -42,13 +42,13 @@ export function createSimState(
   const board: Board = { width, height };
   const rng = mulberry32(seed);
   const grass = createGrassState(board);
-  seedGrass(grass, board, rng);
+  const grassPatches = seedGrass(grass, board, rng);
   // Populate height/colorBucket + prev* from the seeded biomass before the sim
   // starts, so the first real tick only reports tiles that actually changed.
   deriveHeightAndColor(grass, board);
 
   const herd = createHerbivoreState(HERBIVORE_PARAMS.capacity);
-  seedHerbivores(herd, board, HERBIVORE_PARAMS.initialCount, rng);
+  seedHerbivores(herd, board, HERBIVORE_PARAMS.initialCount, rng, grassPatches);
 
   const predators = createCarnivoreState(CARNIVORE_PARAMS.capacity);
   seedCarnivores(predators, board, CARNIVORE_PARAMS.initialCount, rng);

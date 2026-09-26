@@ -114,9 +114,9 @@
 <p>80×45 タイルのトーラス（端がつながった）盤面で、<strong>草・草食獣・肉食獣・死骸・土壌養分</strong>の5つが相互作用するリアルタイムシミュレーション。プレイヤーの介入（神のダイヤル・賭け）はまだ無く、今は「生態系が放っておくとどう振る舞うか」を観察する段階。</p>
 
 <div class="grid2">
-  <div class="card"><h4>時間</h4>1 tick = 2000ms。5 tick = 1 エポック（10秒、実時間は変わらない）。エポックは現状カウンタだけで、何も起きない（将来の賭け精算・気候抽選のフック）。</div>
+  <div class="card"><h4>時間</h4>1 tick = 2000ms（等倍時）。5 tick = 1 エポック（等倍時。エポックは常に実10秒ごとに進む——倍速を変えても、tick 1個が実時間何msを表すかが変わるだけで、エポックは壁時計に同期し続ける。詳細は6章・<code>src/types.ts</code>の速度定数のコメント）。エポックは現状カウンタだけで、何も起きない（将来の賭け精算・気候抽選のフック）。倍速UI（HUDの<code>-</code>/<code>+</code>、0.5x〜4.0x、0.5刻み）で実行中に tick の実時間間隔を変えられる（6章）。</div>
   <div class="card"><h4>盤面</h4>80×45 = 3,600 タイル。1タイル 16px。上下左右が折り返してつながる。</div>
-  <div class="card"><h4>初期状態</h4>草はほぼ全面に生えた状態から始まり、草食獣150・肉食獣12がランダム配置。乱数シードは起動時刻（UIからの指定は不可）。</div>
+  <div class="card"><h4>初期状態</h4>草は盤面全体ではなく、点在する丸い草地（パッチ）14個の中とその周辺にだけ生え、パッチの外は裸地。草食獣150はそのパッチの近くに散らして配置、肉食獣12は盤面全体に一様ランダム。乱数シードは起動時刻（UIからの指定は不可）。</div>
   <div class="card"><h4>典型的な推移</h4>草食獣が爆発的に増える → 草を食べ尽くす／捕食者が増えすぎる → 崩壊 → 生き残りと土壌から回復、の波。絶滅は普通に起きる。</div>
 </div>
 
@@ -267,9 +267,10 @@
   <tr><td><code>fertilityCap</code></td><td class="num">1.0</td><td>養分の上限</td></tr>
 </table>
 </div>
-<p><strong>初期値：</strong>biomass は10%のタイルが疎（0.15〜0.25）、10%が密（0.75〜0.95）、残りが0.3〜0.8。fertility は biomass の半分。</p>
+<p><strong>初期値：</strong>盤面全体への独立乱数ではなく、丸い草地（パッチ）を <code>patchCount</code>（14）個ランダムに撒き、パッチの外は裸地のまま残す（<code>sim/grass.ts</code> の <code>seedGrass</code>）。パッチごとに半径（<code>patchRadiusMin</code>〜<code>patchRadiusMax</code>、6〜14）と中心の濃さ（<code>patchPeakMin</code>〜<code>patchPeakMax</code>、0.6〜0.95）をランダムに割り振り、あるタイルの biomass は「一番強く効いているパッチの中心距離による減衰（2乗で中心から縁までなめらかに0へ）」に <code>patchNoise</code>（±0.05）の粒状ノイズを足したもの。複数パッチが重なる場所は最大値を取る（足し算はしない＝重なっても単に大きい草地になるだけで、不自然に濃くはならない）。fertility は biomass の半分。パッチの中心座標・半径はそのまま草食獣の初期配置（4.3章）に引き継がれる。</p>
 
 <h3>4.3 草食獣 ●</h3>
+<p><strong>初期配置：</strong>盤面全体への一様乱数ではなく、草のパッチ（4.2章）を1つランダムに選び、その円の内側（面積が一様になるよう <code>半径×√乱数</code> で距離を決める）に散らして配置する（<code>sim/herbivore.ts</code> の <code>seedHerbivores</code>）。餌の無い場所から始まる個体をなくすための変更。</p>
 <p>状態は <strong>空腹度 <code>hunger</code>（0=満腹〜1=餓死）</strong>と<strong>年齢 <code>age</code></strong>の2つだけ。この2つは独立していて、どちらか一方で死ぬ。蓄えという概念は無く、空腹度は毎tick必ず上がり、食べた時だけ下がる。個体には誕生時に振られる安定id（<code>id</code>）もあるが、これは表示側（移動の補間・向きの判定、5章）が個体を追跡するためだけの情報で、シミュレーションのロジックからは参照されない。</p>
 <ol class="steps">
   <li><strong>休憩判定</strong>：直前に採食して <code>rest</code>（残り休憩tick数）が1以上残っていれば、それを1減らして今回の移動・空腹・採食（下記2〜4）を丸ごとスキップする（その場に留まり、空腹度も変化しない）。加齢・死・繁殖の判定（5〜7）はこの間も通常通り行う</li>
@@ -283,6 +284,7 @@
 <p class="small">収支の目安：食べるたびに <code>restTicksAfterEating</code>（2）tick休憩が挟まるため、最速でも「採食tickで −0.05、休憩tick×2で±0」の3tick周期。餓死しない限り食べ続けられれば空腹度は3tickあたり0.05ずつ下がる（休憩が無かった頃は1tickあたり0.05だったので、tick数でいうと1/3の速さ）。食べられる頻度がこれより低いと横ばい〜餓死に向かう。飢えだけで死ぬまで最短 20 tick（約40秒、約4エポック、休憩の有無に関係ない — 休憩中は空腹度が上がらないため）。</p>
 
 <h3>4.4 肉食獣 ▲</h3>
+<p><strong>初期配置：</strong>草食獣と違い、パッチには紐づけず盤面全体への一様乱数のまま（<code>sim/carnivore.ts</code> の <code>seedCarnivores</code>）。広く徘徊する捕食者を特定の草地の近くに縛る理由が無いと判断（10章）。</p>
 <p>草食獣と同じ2つの状態（空腹度・年齢）＋同じ表示専用の安定id。違いは餌が「草」ではなく「そのタイルにいる草食獣」であること。</p>
 <ol class="steps">
   <li><strong>休憩判定</strong>：草食獣と同じ仕組み。直前の捕食で <code>rest</code> が残っていれば1減らして移動・空腹・捕食（下記2〜4）をスキップする</li>
@@ -349,7 +351,7 @@ render/dashboard.ts ヒストグラム描画    (差分+個体   sim/grass.ts   
                                                sim/board.ts     座標・折り返し・近傍</pre>
 <ul>
   <li><strong>モジュール境界：</strong>草は動物を知らない。草食獣は草を「引数として」受け取って操作する。肉食獣は草食獣を引数として受け取る。上の段が下の段に依存し、逆は無い。気候などを足すときもこの向きを守る。<code>sim/stats.ts</code> の <code>computeHistogram</code>/<code>sumArray</code> はどちらの種も知らない汎用の数値集計関数で、草・草食獣どちらの集計にも使えるようにするための、この境界を保ったままの共有ユーティリティ。</li>
-  <li><strong>メッセージ：</strong><code>src/types.ts</code> の <code>MainToWorker</code> / <code>WorkerToMain</code>。毎tick、草の差分と各種族の位置が送られる。草食獣・肉食獣のスナップショットは座標・空腹度に加えて表示専用の安定id（<code>id</code>、4.3/4.4章）を持つ。死骸のスナップショットは座標・経過tickに加えて発生元の種（<code>species</code>）と、発生tickだけ意味を持つ移動前座標（<code>fromX</code>/<code>fromY</code>、4.5章）も持つ。<code>predations</code>（<code>PredationSnapshot</code>）はそのtickに成立した捕食の座標だけを持つ1tick限りのリストで、id・種別は無い——死骸と違って実体が残らないイベントなので、毎tick丸ごと新しいリストに入れ替わる（表示専用、5章）。<code>histograms</code>（<code>Histograms</code>、上記のダッシュボード用）は草の全タイルbiomassと草食獣全個体のhunger/ageをその場でビン集計した固定長配列（20ビン×3）で、生の配列（3,600タイル分のbiomassや個体ごとのhunger/age）そのものは送らない。<code>totals</code>（<code>Totals</code>）は草biomass・土壌養分それぞれの全タイル合計を1個ずつの数値にした軽量な集計で、ダッシュボードの合計値グラフのため（履歴の蓄積・リングバッファへの追加はメインスレッド側の<code>TotalsHistory</code>が持つ。worker側は毎tickの合計値2つを送るだけで履歴は保持しない）。位置はtickの瞬間の着地点であって、その間の補間はメインスレッド側（renderer.ts）の仕事。<code>set-tick-rate</code> は定義済みだがUIは無く、変更してもrenderer側の補間時間（<code>DEFAULT_TICK_MS</code> 起動時の値で固定）には反映されない。</li>
+  <li><strong>メッセージ：</strong><code>src/types.ts</code> の <code>MainToWorker</code> / <code>WorkerToMain</code>。毎tick、草の差分と各種族の位置が送られる。草食獣・肉食獣のスナップショットは座標・空腹度に加えて表示専用の安定id（<code>id</code>、4.3/4.4章）を持つ。死骸のスナップショットは座標・経過tickに加えて発生元の種（<code>species</code>）と、発生tickだけ意味を持つ移動前座標（<code>fromX</code>/<code>fromY</code>、4.5章）も持つ。<code>predations</code>（<code>PredationSnapshot</code>）はそのtickに成立した捕食の座標だけを持つ1tick限りのリストで、id・種別は無い——死骸と違って実体が残らないイベントなので、毎tick丸ごと新しいリストに入れ替わる（表示専用、5章）。<code>histograms</code>（<code>Histograms</code>、上記のダッシュボード用）は草の全タイルbiomassと草食獣全個体のhunger/ageをその場でビン集計した固定長配列（20ビン×3）で、生の配列（3,600タイル分のbiomassや個体ごとのhunger/age）そのものは送らない。<code>totals</code>（<code>Totals</code>）は草biomass・土壌養分それぞれの全タイル合計を1個ずつの数値にした軽量な集計で、ダッシュボードの合計値グラフのため（履歴の蓄積・リングバッファへの追加はメインスレッド側の<code>TotalsHistory</code>が持つ。worker側は毎tickの合計値2つを送るだけで履歴は保持しない）。位置はtickの瞬間の着地点であって、その間の補間はメインスレッド側（renderer.ts）の仕事。<code>set-tick-rate</code>（<code>{ ms }</code>、tickの実時間間隔）はHUDの倍速UI（<code>-</code>/<code>+</code>、<code>main.ts</code>）から送られ、Worker側の<code>SimState.tickIntervalMs</code>（setIntervalの遅延そのもの）と、メインスレッド側の<code>RendererState.tickDurationMs</code>（<code>render/renderer.ts</code>の<code>setTickDuration</code>、from→toの補間が1周期とみなす長さ）を同時に更新する——どちらか一方だけ変えると、補間がtickの実際の間隔より早く/遅く終わってカクつくため、2つは常にペアで動かす。倍率（0.5x〜4.0x、0.5刻み、<code>src/types.ts</code>の<code>SPEED_MIN</code>/<code>SPEED_MAX</code>/<code>SPEED_STEP</code>）から実際の<code>ms</code>への変換は<code>src/speed.ts</code>の<code>speedToTickMs</code>（<code>DEFAULT_TICK_MS / speed</code>）。<code>tickIntervalMs</code>は<code>tick()</code>内で<code>msSinceEpochStart</code>への加算量としても使われる（3章）ため、setIntervalの遅延と加算量が常に同じ値になり、結果としてエポックは倍率によらず実10秒ごとに進み続ける（1章）——変わるのはエポックあたりのtick数の方。</li>
   <li><strong>配信：</strong><code>main</code> に push すると GitHub Actions が typecheck・test・build して GitHub Pages に公開（<code>https://msntts.github.io/hakoniwa/</code>）。</li>
 </ul>
 
@@ -385,6 +387,7 @@ render/dashboard.ts ヒストグラム描画    (差分+個体   sim/grass.ts   
   <tr><td>INV-19</td><td>被食シーン（<code>drawPredations</code>）は捕食が成立したtickのあいだ、捕食者本体に隠れたり欠けたりせず全身が視認でき、tickが終わったら次tickには跡形なく消える（描画されたタイルが取り残されない）</td><td><span class="tag obs">実機</span></td><td>捕食tickのprogress=0/0.3/0.6/0.95を強制的に描画させ、キャンバスをその場で切り出して確認（rAFが自動操作下のタブでは走らないため、<code>paintOverlayFrame</code>を一時的に直接呼んで検証）。progress=0では捕食者がまだ離れた場所を歩いていて獲物が満alpha・等身大で単独で見え、捕食者が近づく（progress→1）につれて薄く・小さくなり、捕食者到着時にはほぼ消えていることを確認。次tick、同じ座標を撮り直して残留が無いことも確認（10章）</td></tr>
   <tr><td>INV-20</td><td>餓死・老衰で発生した死骸は、その個体が最後に生きて描かれた位置から発生位置まで（1タイル以内なら）滑って見え、瞬間移動しない</td><td><span class="tag obs">実機</span></td><td>デバッグ計装で「発生tickの咲き出し位置(from)」「最終静止位置(to)」にマーカーを重ねてcanvasを切り出し、progress=0の瞬間に発生位置ではなくfrom位置に描かれていることを確認（10章）。アドバイザーによる全点検で、自然死の約41%（1,827/4,464件、約1,550tick分のトレース）でこのジャンプが発生していたことが定量的に判明</td></tr>
   <tr><td>INV-21</td><td>死骸は発生（age=0）から消滅まで、実質decayTicks（10）tick分、画面上に存在する。発生tickに分解が進んだり、消滅が1tick早まったりしない</td><td><span class="tag ok">テスト</span></td><td><code>carcass.test.ts</code>。修正前は発生と同じtick内で<code>stepCarcasses</code>が走る処理順（3章）のせいでage=0が一度も送信されず、実質9tickしか存在していなかった</td></tr>
+  <tr><td>INV-22</td><td>草の初期配置はパッチ（草地）の外では裸地に近く、パッチ中心に近いタイルほど濃い。草食獣は一様乱数ではなく、いずれかのパッチの内側に配置される</td><td><span class="tag ok">テスト</span></td><td><code>grass.test.ts</code>（パッチ中心=濃い／遠方=裸地／トーラスの端をまたぐパッチの確認）、<code>herbivore.test.ts</code>（配置がパッチ半径内に収まることをトーラス距離で確認）。実機のスクリーンショットで、点在する草地とその間の裸地、草地内に集まる草食獣を目視確認（10章）</td></tr>
 </table>
 </div>
 
@@ -400,7 +403,7 @@ render/dashboard.ts ヒストグラム描画    (差分+個体   sim/grass.ts   
   <tr><td>分解者レイヤーの表示切り替え</td><td>未実装。土壌養分は画面に出ない</td></tr>
   <tr><td>草食獣→捕食者の「餌+、遅延」</td><td>捕食の効果は即時。遅延は死骸の分解だけ</td></tr>
   <tr><td>背景色（量）と文字（構造）の独立</td><td>両方 biomass から決まる</td></tr>
-  <tr><td>倍速・事後ログ</td><td>プロトコルに <code>set-tick-rate</code> があるだけ</td></tr>
+  <tr><td>倍速・事後ログ</td><td>倍速は実装（0.5x〜4.0x、0.5刻み、HUDの<code>-</code>/<code>+</code>、6章）。事後ログ（賭けの精算・振り返り）は未実装</td></tr>
   <tr><td>種の形質（体格・生息層・耐性）、進化、形質による捕食関係の導出</td><td>未実装。2種は固定</td></tr>
   <tr><td>海と陸、繋ぎ役の種</td><td>未実装</td></tr>
   <tr><td>保存（localStorage / IndexedDB）、図鑑</td><td>未実装</td></tr>
@@ -415,7 +418,7 @@ render/dashboard.ts ヒストグラム描画    (差分+個体   sim/grass.ts   
   <li><strong>視野は隣1マスだけ。</strong><code>HERBIVORE_PARAMS.visionRadius</code> は定義されているが使われていない。</li>
   <li><strong>無性生殖。</strong>検討の上、現段階では雌雄を入れないと判断（10章）。</li>
   <li><strong>質量非保存</strong>（2章）。散布と死骸が、実質的な外部からの養分流入になっている。</li>
-  <li><strong>長時間の検証手段が無い。</strong>回復のような数千tickの挙動は、<code>DEFAULT_TICK_MS</code> を一時的に 20 に書き換えて早送りして確認している。倍速UIか、ヘッドレスで回す検証スクリプトがあると良い。</li>
+  <li><strong>長時間の検証手段が弱い。</strong>倍速UI（6章）で最大4倍までは実行中に早送りできるようになったが、回復のような数千tickの挙動を追うにはまだ遅い（4倍でも1tick=500ms）。<code>DEFAULT_TICK_MS</code> を一時的に書き換える早送りは今も併用している。ヘッドレスで回す検証スクリプトがあると良い。</li>
   <li><strong>乱数シードを固定できない。</strong>同じ条件の再現・比較ができない。</li>
   <li><strong>1回の観察に依存した調整がある。</strong>実機確認の多くは1回の試行。シードによって結果が変わりうる。</li>
 </ul>
@@ -426,12 +429,21 @@ render/dashboard.ts ヒストグラム描画    (差分+個体   sim/grass.ts   
 <div class="table-wrap">
 <table>
   <tr><th>判断</th><th>理由・経緯</th></tr>
+  <tr><td>草の初期配置を「盤面全体への独立乱数」から「点在する丸いパッチ（草地）＋その外は裸地」に変更し、草食獣の初期配置もそのパッチの近くへ散らすように変更（<code>sim/grass.ts</code> の <code>seedGrass</code>、<code>sim/herbivore.ts</code> の <code>seedHerbivores</code>）</td><td>ユーザー提案：「草や動物の初期配置のアルゴリズム考えたいね。今はあまりにもランダムすぎるので例えば草なんかは数点ランダムにポイントを決めてその周辺に草をはやすとか」。<br><br>
+  <strong>設計：</strong>盤面に <code>patchCount</code>（14）個のパッチ中心をランダムに撒き、パッチごとに半径（6〜14）と中心の濃さ（0.6〜0.95）を割り振る。あるタイルの biomass は「一番強く効いているパッチの中心距離（トーラス最短距離、<code>board.ts</code> に新設した <code>torusDelta</code> を使用）による2乗の滑らかな減衰」に軽いノイズ（±0.05）を足したもの。複数パッチが重なる場所は最大値を取る（足し算にすると重なり部分が不自然に濃くなるため）。パッチから遠いタイルは裸地のまま残る。<code>seedGrass</code> はこのパッチ中心・半径のリストを返すようにし、<code>seedHerbivores</code> がそれをそのまま受け取って、個体ごとにランダムに1つ選んだパッチの内側（面積が一様になるよう半径×√乱数で距離を決める——単純に半径×乱数だと中心付近に個体が偏る）に配置する。肉食獣は広く徘徊する捕食者という性格上、特定の草地に縛る理由が無いと判断し、一様乱数のまま変更していない。<br><br>
+  <strong>影響を洗う：</strong>過去に <code>spreadRate</code>（草の隣接タイルへの養分の染み出し）を強くしすぎて「絶滅しにくくなる」問題が起きたことがあり（本章、後述の判断）、パッチ状の初期配置も似た方向（局所的な豊かさが群れを人為的に支えてしまう）に効く懸念があったため、実装後にINV-11（絶滅が起こりうる）を複数シードで確認する計画を先に立てた。<br><br>
+  <strong>検証：</strong>単体テスト（<code>grass.test.ts</code>：パッチ中心の濃さ、パッチ半径超の距離では裸地、トーラスの継ぎ目をまたぐパッチの染み出し、パッチ数・半径・濃さが設定範囲内、biomassが[0, capacity]を超えない。<code>herbivore.test.ts</code>：パッチ中心にぴったり配置されるケース、多数個体がトーラス距離で見てパッチ半径内に収まること、パッチが空でも例外を投げず一様乱数にフォールバックすること）に加え、実際に開発サーバーを起動してスクリーンショットで確認——点在する丸い草地とその間の裸地、草地の中に集まる草食獣が、狙いどおりの見た目になっていた。さらに4シード（1/2/3/424242）×800tickのヘッドレス実行で個体数推移を確認：草食獣は4シードとも全滅せず（最小13〜38、最大1228〜1602）、肉食獣は4シードとも既知の課題（INV-13、未確認）どおり絶滅したが、これは今回の変更が原因ではなく既存の傾向と一致しており、パッチ化による極端な安定化（絶滅しにくくなる）は今回の試行では見られなかった。npm run typecheck / npm run test で確認。1章・4.2〜4.4章・INV-22（7章）を更新</td></tr>
   <tr><td>ダッシュボードに「草biomass合計・土壌養分合計」の時系列折れ線（<code>#chart-totals</code>）を追加（<code>sim/stats.ts</code> の <code>sumArray</code>、<code>render/dashboard.ts</code> の <code>TotalsHistory</code>/<code>drawTotalsChart</code>、<code>WorkerToMain</code>への<code>totals</code>フィールド追加）</td><td>ユーザー指示：「全体的な養分は見たいね。ゲームとして持続可能とするならば総養分が減らないことが大事」。直前の判断（ヒストグラム3枚）は<strong>ある瞬間の分布</strong>しか見せず、「時間とともに増えているか減っているか」という持続可能性の問いには答えられなかったため、別の集計として合計値の推移を追加した。<br><br>
   「総養分」の定義：本モデルの「養分」は4.2章の<code>fertility</code>（土壌養分、成長の唯一の材料）を指すが、持続可能性を見るには成長済みの<code>biomass</code>も合わせて見る必要がある——<code>fertility</code>だけを追うと、成長でbiomassに変換された分が「消えた」ように見えてしまう（実際は形を変えて盤面上に残っている）。そこで両者を同じグラフに、同じ尺度（タイルあたり0〜1を3,600タイル分足した値、上限3,600）で描くことにした（1軸の原則、dataviz skill）。動物の体は「養分の在庫」として数えていない——hunger/ageは量ではなく状態なので、この合計には含まれない。<br><br>
   <strong>この合計はそもそも保存量ではない</strong>ことを実装前に確認した（2章）：散布は元タイルのbiomassを減らさず隣タイルの養分を生む（正味の追加）、死骸の分解は何を食べていたかに関係なく固定量0.4を返す（正味の追加）一方、採食で食べた量のうち排泄で戻るのは半分だけ（正味の損失）、捕食された個体は死骸を残さない（正味の損失、ただし元々このモデルは動物の体を養分としてカウントしていないので、この損失は「捕食者に養分が移った」という2章の説明と矛盾しない——単に合計の外に出入りする経路が複数あるというだけ）。つまりこの時系列は「保存されているはずのものを検証する」グラフではなく、「実際どちらに動いているかを観測する」ためのグラフだと最初から位置づけ、7章に新しい不変条件は追加していない。<br><br>
   実装後、<code>DEFAULT_TICK_MS</code>を一時的に15msへ下げて実機で早送り観察（9章の検証手法どおり、確認後2000msへ戻した）。序盤に草食獣が爆発して盤面がほぼ裸地化（草biomass合計 3,600中 約350、土壌養分合計は一桁〜十数)まで落ち込んだ後、その水準のまま数十秒（数千tick相当）にわたって大きくは動かず、明確な減少トレンドにも回復トレンドにも転じないまま横ばいを続ける局面を観測した——1回の観察なので他のシードでも同様かは未確認（9章「1回の観察に依存した調整がある」と同じ限界）。数値パラメータ自体はまだ変更していない</td></tr>
   <tr><td>草のbiomassと草食獣のhunger/ageをビン集計するデバッグ用ダッシュボード（ヒストグラム3枚）を追加（<code>sim/stats.ts</code> の <code>computeHistogram</code>/<code>histogramMean</code>、<code>render/dashboard.ts</code>、<code>WorkerToMain</code>への<code>histograms</code>フィールド追加）</td><td>ユーザー指示：「草や草食動物のダッシュボード化ヒストグラムが欲しい。あなたもその数値を確認してパラメータ調整に使って」。集計はワーカー側（全タイル・全個体の生データを持っている場所）で行い、メインスレッドには20ビン×3の集計済み配列だけを送る——生の3,600タイル分biomassや個体ごとのhunger/ageをそのまま毎tick送る案は、既存のスナップショット（4.3/4.4章のid/rest等、表示に要る最小限だけを送る設計）と方針が逆行するため採らなかった。ビン集計・平均の計算自体は草食獣・肉食獣どちらの種も知らない汎用関数にして<code>sim/stats.ts</code>に置き、モジュール境界（6章）を保った。<br><br>
   実装後、<code>DEFAULT_TICK_MS</code>を一時的に20msへ下げて実機で数百tick分を早送り観察（9章の検証手法どおり、確認後に2000msへ戻した）。序盤（tick数十）は草biomassの分布が初期シード通りの山形（平均0.6前後）、草食獣のhunger/ageは全個体がほぼ同じ値に一塊で立つ単峰（全員が同時に初期化された直後のため）。数百tick後には典型的な「爆発→枯渇」の一相を観測：草biomassが平均0.1まで崩れてほぼ全タイルが裸地に近づく一方、草食獣は150→37まで急減、その後96まで部分回復。この回復局面のhunger分布は0.2〜0.6に広く裾を引く形（個体ごとの採食機会のばらつきが可視化された）、age分布は若い個体に偏った右肩下がり（高い死亡率の中で新しい出生が個体群を若返らせている状態）になっており、1章が説明する「爆発的に増える→草を食べ尽くす→崩壊→回復」の波を、数値の分布としてもグラフ上でそのまま確認できた。7章の不変条件・パラメータ自体への変更はまだ提案していない——今回はダッシュボードの追加と、それが意図通りにピラミッドの動態を可視化できることの確認まで</td></tr>
+  <tr><td>倍速UI（0.5x〜4.0x、0.5刻み）を追加。既存の <code>set-tick-rate</code> プロトコル（定義だけあってUIが無い状態、8章）を初めて使う実装</td><td>ユーザー指示：「倍速モードを搭載したい。0.5倍速刻みぐらいで早めたりおそめたりしたい」。<br><br>
+  <strong>採寸：</strong>既存の<code>set-tick-rate</code>は<code>SimState.tickIntervalMs</code>を書き換えるだけで、これはWorkerの<code>setInterval</code>の遅延と、<code>tick()</code>が毎tick<code>msSinceEpochStart</code>に加算する量の両方を兼ねている（同じ変数）。そのため倍率を変えても<strong>エポックの実時間換算（10秒/エポック）は変わらない</strong>——setIntervalの間隔が縮む/伸びるのと同じ比率でエポックあたりのtick数が増減し、実時間では相殺される（1tick=1000msでも4000msでも、5tick分・20tick分の実時間はどちらも10秒）。変わるのはtickそのもの（空腹度・移動など）が実時間あたり何回進むか。当初これを設計ミスかと疑ったが、1章の「10秒、実時間は変わらない」という既存の記述と整合しており、意図した挙動と判断した。<br><br>
+  <strong>もう1つの発見：</strong>6章に「<code>set-tick-rate</code>は定義済みだがUIは無く、変更してもrenderer側の補間時間（<code>DEFAULT_TICK_MS</code>起動時の値で固定）には反映されない」という既知のギャップが明記されていた。<code>RendererState.tickDurationMs</code>（from→toの補間が1周期とみなす長さ、5章）は<code>createRenderer</code>呼び出し時の値のまま更新されず、倍速をWorker側だけに適用すると「tickは速く/遅く届くのに、個体の滑り演出は元の速度のまま」という不一致が起きる実装になっていた。<br><br>
+  <strong>実装：</strong>(1) <code>src/speed.ts</code>に<code>clampSpeed</code>（0.5刻みへの丸め＋範囲クランプ、浮動小数の誤差対策込み）と<code>speedToTickMs</code>（<code>DEFAULT_TICK_MS / speed</code>）を純関数として切り出し、単体テスト化（<code>test/speed.test.ts</code>）。(2) <code>render/renderer.ts</code>に<code>setTickDuration</code>を追加し、<code>main.ts</code>の倍速変更が<code>set-tick-rate</code>のWorker送信と<code>RendererState.tickDurationMs</code>の更新を必ずペアで行うようにして、上記のギャップを解消。(3) HUDに<code>-</code>/<code>+</code>ボタンと現在倍率の表示を追加、範囲の端では該当ボタンを<code>disabled</code>に。<br><br>
+  <strong>検証：</strong><code>npm run typecheck</code>・<code>npm run test</code>（65件）は通過。実機では、開発サーバーをブラウザで開き、2.0xにしてから4秒強待って<code>tick</code>表示の増分を計測 → 4tick分（期待値どおり1tick≈1000ms）。0.5xでも同様に約4.7秒で1tickのみ進行（期待値1tick=4000ms、待機分の誤差を差し引けば整合）。範囲の下限（0.5x）で<code>-</code>ボタンが<code>disabled</code>になることも確認。上限（4.0x）・一時停止中に倍率を変えて再開した場合の見た目（補間が新しい速さに追従するか）は未確認</td></tr>
   <tr><td>マニュアル・<code>params.ts</code>コメントの実時間換算（秒・エポック）を、1 tick 500ms→2000ms（10章の該当判断）に合わせて再計算</td><td>ユーザー指示：「サーバーサイドと相談して現状のソースコードとマニュアルの乖離がないか、特に決定事項なんかこれまでの思考みたいなところのあれがあると思うんだけど、そこは徹底的に見てください。2、3回ループで確認して」。独立したサブエージェントに3パス（①マニュアル全記述の棚卸し→②ソースと1件ずつ照合→③矛盾リストを持って全体を再読）で監査を依頼した。<br><br>
   見つかったのは1系統の問題：<strong>1 tick を 500ms→2000ms に変更した際（10章「1 tick 500ms → 2000ms…」の判断）、tick数そのものやパラメータの値は正しいまま据え置かれたが、そこから導かれる実時間・エポック数の換算だけが古い数値のまま各所に残っていた</strong>。具体的には4箇所：(1) 4.5章の<code>decayTicks</code>「約5秒」→実際は10tick×2000ms=20秒。しかもこの行自体は今回のセッション中（死骸のfromX/fromY修正時）に新しく書いたものだが、<code>params.ts</code>側の古いコメント（<code>// ~5s</code>、500ms時代の名残）をそのまま転記してしまっていた。(2) 4.1章ピラミッド表の寿命「200（約100秒）」「600（約300秒）」→実際は200tick×2000ms=400秒、600tick×2000ms=1200秒（20分）。(3) 3章「エポックの判定（20 tickごと）」→<code>DEFAULT_EPOCH_MS</code>(10000)/<code>DEFAULT_TICK_MS</code>(2000)=5tickごとが正しく、しかも1章の時間カード（「5 tick = 1 エポック」）と同じ文書内で矛盾していた。(4) 4.3章「飢えだけで死ぬまで最短20tick（約1エポック）」→現在は5tick/エポックなので20tickは4エポック。(2)(3)はマニュアルの最初のコミット（tick変更と同日）に由来し、隣接する1章は変更時に直されたのにこの2箇所だけ直し漏れていた。(4)は翌日以降、この3章のエポック定義の誤りに気づかないまま別の理由で編集されていた。<br><br>
   併せて、この数値の出どころだった <code>src/sim/params.ts</code> のコメント（<code>hungerGainPerTick</code>「~1 epoch」、<code>lifespanTicks</code>「2000 ticks (1000s)」「200 ticks (100s / ~10 epochs)」、<code>decayTicks</code>「~5s」）も同じ500ms時代の換算のまま残っていたため、マニュアルと同じ計算で修正した。<br><br>

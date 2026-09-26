@@ -175,6 +175,17 @@ export function createRenderer(
   };
 }
 
+// Speed control's counterpart on the render side: the worker's tick cadence
+// (src/worker/sim.worker.ts's 'set-tick-rate') and this glide duration must
+// change together, or the from->to interpolation (see RendererState's
+// tickDurationMs doc comment) drifts out of sync with how often ticks
+// actually land -- glides that run longer or shorter than the real gap
+// between ticks either freeze early or never reach progress=1 before the
+// next tick overwrites from*.
+export function setTickDuration(r: RendererState, ms: number): void {
+  r.tickDurationMs = ms;
+}
+
 function paintGrassTile(r: RendererState, i: number): void {
   const x = i % r.width;
   const y = Math.floor(i / r.width);

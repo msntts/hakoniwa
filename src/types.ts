@@ -13,6 +13,20 @@ export const TILE_SIZE = 16;
 export const DEFAULT_TICK_MS = 2000;
 export const DEFAULT_EPOCH_MS = 10_000;
 
+// Speed control: multiplies how often ticks land in real time by scaling the
+// worker's setInterval delay (tickMs / speed) -- sim step logic itself never
+// changes, so 2x just means the same ticks arrive twice as often. Because
+// each tick still advances msSinceEpochStart by its own (now smaller) real
+// interval, an epoch keeps landing every 10 real seconds at any speed (see
+// docs/manual.html #s1's "実時間は変わらない"); only the per-tick pace of
+// hunger/movement/etc speeds up or down. 4x lands back on the pre-slowdown
+// 500ms tick (see DEFAULT_TICK_MS's history); 0.5x is slow enough to study a
+// single tick's effect without pausing outright.
+export const SPEED_MIN = 0.5;
+export const SPEED_MAX = 4;
+export const SPEED_STEP = 0.5;
+export const DEFAULT_SPEED = 1;
+
 export interface HerbivoreSnapshot {
   x: Int16Array;
   y: Int16Array;

@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import type { Board } from '../src/sim/board';
-import { createGrassState, deriveHeightAndColor, depositFertility, grazeTile, stepGrass } from '../src/sim/grass';
+import { idx, type Board } from '../src/sim/board';
+import { createGrassState, deriveHeightAndColor, depositFertility, grazeTile, seedGrass, stepGrass } from '../src/sim/grass';
 import { GRASS_PARAMS } from '../src/sim/params';
 
 const board: Board = { width: 4, height: 4 };
+const noRandom = () => 0;
+
+// A small, fixed-period PRNG (distinct from the sim's own mulberry32 in
+// loop.ts) purely so seedGrass's patch-count/bounds tests can sample varied,
+// reproducible values instead of the single degenerate point noRandom gives.
+function varyingRng(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+}
 
 describe('stepGrass', () => {
   it('grows biomass toward capacity without overshooting, given enough fertility', () => {
@@ -152,5 +164,66 @@ describe('deriveHeightAndColor', () => {
     state.biomass[3] = 0.99;
     const third = deriveHeightAndColor(state, board);
     expect(third.map((d) => d.i)).toEqual([3]);
+  });
+});
+
+describe('seedGrass', () => {
+  // Big enough that a tile at the far corner from (0,0) is well outside even
+  // patchRadiusMax on the torus (half the board's own diagonal), so it can
+  // only be reached by patch influence if the wrap math is wrong.
+  const bigBoard: Board = { width: 40, height: 40 };
+
+  it('is dense at a patch center and bare in ground far from every patch', () => {
+    // rng()=>0 collapses every patch to the same degenerate point: x=0,
+    // y=0, radius=patchRadiusMin, peak=patchPeakMin, and a constant
+    // (negative-most) noise offset -- deterministic without needing to
+    // reproduce the RNG's actual sequence by hand.
+    const state = createGrassState(bigBoard);
+    seedGrass(state, bigBoard, noRandom);
+
+    const centerBiomass = state.biomass[idx(bigBoard, 0, 0)] ?? 0;
+    expect(centerBiomass).toBeCloseTo(GRASS_PARAMS.patchPeakMin - GRASS_PARAMS.patchNoise, 5);
+    // Existing grass implies some soil fertility already banked (4.2章).
+    expect(state.fertility[idx(bigBoard, 0, 0)]).toBeCloseTo(centerBiomass * 0.5, 5);
+
+    // (20,20) is patchRadiusMax away or more from (0,0) even via the
+    // shortest torus path -- outside every patch's reach.
+    const farBiomass = state.biomass[idx(bigBoard, 20, 20)] ?? -1;
+    expect(farBiomass).toBe(0);
+  });
+
+  it('wraps a patch near the edge across the seam instead of only influencing the tiles before it', () => {
+    // A patch planted at the seam (x=0) should still noticeably raise
+    // biomass just *before* the seam (e.g. x = width-1), not just after it.
+    const state = createGrassState(bigBoard);
+    seedGrass(state, bigBoard, noRandom);
+
+    const justBeforeSeam = state.biomass[idx(bigBoard, bigBoard.width - 1, 0)] ?? 0;
+    expect(justBeforeSeam).toBeGreaterThan(0);
+  });
+
+  it('returns patchCount patches, each within the configured radius/peak bounds', () => {
+    const state = createGrassState(bigBoard);
+    const patches = seedGrass(state, bigBoard, varyingRng(12345));
+
+    expect(patches.length).toBe(GRASS_PARAMS.patchCount);
+    for (const patch of patches) {
+      expect(patch.x).toBeGreaterThanOrEqual(0);
+      expect(patch.x).toBeLessThan(bigBoard.width);
+      expect(patch.y).toBeGreaterThanOrEqual(0);
+      expect(patch.y).toBeLessThan(bigBoard.height);
+      expect(patch.radius).toBeGreaterThanOrEqual(GRASS_PARAMS.patchRadiusMin);
+      expect(patch.radius).toBeLessThanOrEqual(GRASS_PARAMS.patchRadiusMax);
+    }
+  });
+
+  it('never produces biomass outside [0, capacity], even with varied noise', () => {
+    const state = createGrassState(bigBoard);
+    seedGrass(state, bigBoard, varyingRng(999));
+
+    for (let i = 0; i < bigBoard.width * bigBoard.height; i++) {
+      expect(state.biomass[i]).toBeGreaterThanOrEqual(0);
+      expect(state.biomass[i]).toBeLessThanOrEqual(GRASS_PARAMS.capacity);
+    }
   });
 });

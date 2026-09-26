@@ -23,7 +23,13 @@
       #hud {
         font-size: 13px;
         display: flex;
+        align-items: center;
         gap: 16px;
+      }
+      #speed-control {
+        display: flex;
+        align-items: center;
+        gap: 6px;
       }
       canvas {
         image-rendering: pixelated;
@@ -55,6 +61,11 @@
         <span id="hud-epoch">epoch: 0</span>
         <span id="hud-pop">herbivores: 0</span>
         <button id="btn-pause">pause</button>
+        <span id="speed-control">
+          <button id="btn-speed-down">-</button>
+          <span id="hud-speed">1.0x</span>
+          <button id="btn-speed-up">+</button>
+        </span>
       </div>
       <canvas id="board"></canvas>
       <div id="dashboard">

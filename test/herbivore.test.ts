@@ -1,12 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import type { Board } from '../src/sim/board';
+import { torusDelta } from '../src/sim/board';
 import { createCarcassState, spawnCarcass } from '../src/sim/carcass';
+import type { GrassPatch } from '../src/sim/grass';
 import { createGrassState } from '../src/sim/grass';
-import { createHerbivoreState, spawnHerbivore, stepHerbivores } from '../src/sim/herbivore';
+import { createHerbivoreState, seedHerbivores, spawnHerbivore, stepHerbivores } from '../src/sim/herbivore';
 import { GRASS_PARAMS, HERBIVORE_PARAMS } from '../src/sim/params';
 
 const board: Board = { width: 5, height: 5 };
 const noRandom = () => 0;
+
+// Same small fixed-period PRNG as grass.test.ts's seedGrass tests -- varied,
+// reproducible values instead of noRandom's single degenerate point.
+function varyingRng(seed: number): () => number {
+  let s = seed;
+  return () => {
+    s = (s * 1103515245 + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+}
 
 describe('stepHerbivores', () => {
   it('starves an individual once hunger reaches the starvation threshold, regardless of age', () => {
@@ -218,5 +230,45 @@ describe('stepHerbivores', () => {
 
     expect(herd.x[0]).toBe(2);
     expect(herd.y[0]).toBe(2);
+  });
+});
+
+describe('seedHerbivores', () => {
+  it('spawns exactly at the patch center when rng always returns 0 (angle=0, radius=0)', () => {
+    const patches: GrassPatch[] = [{ x: 3, y: 3, radius: 5 }];
+    const h = createHerbivoreState(10);
+
+    seedHerbivores(h, board, 1, noRandom, patches);
+
+    expect(h.x[0]).toBe(3);
+    expect(h.y[0]).toBe(3);
+  });
+
+  it('lands every individual within its patch\'s radius of the patch center, even on the torus', () => {
+    const bigBoard: Board = { width: 40, height: 40 };
+    // Patch centered right at the seam so a naive (non-wrapping) distance
+    // check would wrongly fail individuals that landed just past x=39->0.
+    const patches: GrassPatch[] = [{ x: 0, y: 20, radius: 8 }];
+    const h = createHerbivoreState(200);
+
+    seedHerbivores(h, bigBoard, 200, varyingRng(42), patches);
+
+    expect(h.count).toBe(200);
+    for (let i = 0; i < h.count; i++) {
+      const dx = torusDelta(patches[0]?.x ?? 0, h.x[i] ?? 0, bigBoard.width);
+      const dy = torusDelta(patches[0]?.y ?? 0, h.y[i] ?? 0, bigBoard.height);
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      // +0.71 (~sqrt(2)/2): landing coordinates are rounded to the nearest
+      // tile, which can push a point sampled right at the radius's edge out
+      // by up to half a tile diagonally.
+      expect(dist).toBeLessThanOrEqual((patches[0]?.radius ?? 0) + 0.71);
+    }
+  });
+
+  it('falls back to a board-wide position instead of throwing when given no patches', () => {
+    const h = createHerbivoreState(10);
+
+    expect(() => seedHerbivores(h, board, 3, noRandom, [])).not.toThrow();
+    expect(h.count).toBe(3);
   });
 });

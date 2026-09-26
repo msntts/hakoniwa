@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hakoniwa 肉食獣図鑑</title>
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --fg: #22211f;
+    --muted: #6b6760;
+    --line: #dcd8d0;
+    --panel: #f2efe8;
+    --panel2: #ebe6dc;
+    --accent: #b25a1f;
+    --carn: #f7d0bd;
+    --carcass: #ecd3d3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1918;
+      --fg: #e8e5df;
+      --muted: #a39e95;
+      --line: #3a3733;
+      --panel: #24221f;
+      --panel2: #2c2925;
+      --accent: #e8a25a;
+      --carn: #45281c;
+      --carcass: #3e2626;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1918; --fg: #e8e5df; --muted: #a39e95; --line: #3a3733; --panel: #24221f; --panel2: #2c2925;
+    --accent: #e8a25a; --carn: #45281c; --carcass: #3e2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.75 system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  }
+  main { max-width: 940px; margin: 0 auto; padding: 32px 16px 96px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: 0.02em; }
+  h2 { font-size: 21px; margin: 56px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  h3 { font-size: 17px; margin: 28px 0 8px; }
+  p { margin: 8px 0; }
+  .lede { color: var(--muted); margin-bottom: 24px; }
+  code { font: 13px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 14px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  td.num { font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+  .table-wrap { overflow-x: auto; }
+  nav.toc { background: var(--panel); border-radius: 10px; padding: 12px 18px; margin: 20px 0; }
+  nav.toc ol { margin: 4px 0; padding-left: 22px; }
+  nav.toc a { color: var(--fg); }
+  .callout { border-left: 3px solid var(--accent); background: var(--panel); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .small { font-size: 13px; color: var(--muted); }
+
+  .icon-hero { display: flex; align-items: center; gap: 24px; background: var(--carn); border-radius: 12px; padding: 18px 22px; margin: 16px 0; flex-wrap: wrap; }
+  .icon-hero canvas { image-rendering: -webkit-optimize-contrast; }
+  .icon-hero .legend { flex: 1; min-width: 220px; }
+  .icon-hero .legend ul { margin: 6px 0; padding-left: 20px; }
+
+  .hunger-row { display: flex; gap: 14px; flex-wrap: wrap; margin: 14px 0; }
+  .hunger-cell { text-align: center; background: var(--panel); border-radius: 10px; padding: 10px 8px 8px; width: 92px; }
+  .hunger-cell .lab { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  .state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin: 18px 0; }
+  .state-card { background: var(--panel); border-radius: 12px; padding: 14px 16px 16px; display: flex; flex-direction: column; }
+  .state-card .stage { display: flex; align-items: center; gap: 14px; }
+  .state-card .stage .canvas-wrap { background: var(--panel2); border-radius: 10px; padding: 6px; flex-shrink: 0; }
+  .state-card h4 { margin: 0 0 4px; font-size: 15.5px; }
+  .state-card .trigger { font-size: 12.5px; color: var(--muted); margin: 0 0 8px; }
+  .state-card p.desc { font-size: 13.5px; margin: 6px 0 0; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--accent); color: var(--accent); margin-left: 6px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>hakoniwa 肉食獣図鑑 ▲</h1>
+<p class="lede">肉食獣（<code>CarnivoreState</code>）に限定した見た目とパラメータのまとめ。全体のモデル（因果ループ・1 tickの処理順・不変条件）は <a href="manual.html">docs/manual.html</a> を参照。数値の正は <code>src/sim/params.ts</code>、見た目のベクタ図形は <code>src/render/sprites.ts</code> の <code>drawTigerShape</code> / <code>TIGER_POSES</code> をそのままJSに写して動かしている（このページ独自の演出は無い）。</p>
+
+<nav class="toc">
+  <strong>目次</strong>
+  <ol>
+    <li><a href="#s1">アイコン（見た目の言語）</a></li>
+    <li><a href="#s2">状態ごとの動くアイコン</a></li>
+    <li><a href="#s3">パラメータ</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. アイコン（見た目の言語）</h2>
+<div class="icon-hero">
+  <div class="canvas-wrap"><canvas id="hero" width="140" height="140"></canvas></div>
+  <div class="legend">
+    <strong>細身の箱型ボディ＋縞模様</strong>（design.md：鋭い輪郭＝肉食）
+    <ul>
+      <li>草食獣より縦に薄く（<code>bh = r×0.6</code>）、角も立っている（<code>cr = r×0.22</code>）</li>
+      <li>縞は暖色寄りの濃茶（黒ではない）、口は赤系（<code>TIGER_MOUTH_COLOR</code>）</li>
+      <li>目・歯は無し。口の開閉と体の動きだけで「食べている」を表現する</li>
+      <li>常に右向きで焼き込み、左向き個体は描画時に左右反転（このページでは常に右向き）</li>
+    </ul>
+  </div>
+</div>
+
+<h3>空腹度による色の変化</h3>
+<p>体色は5段階の空腹バケット（<code>ANIMAL_HUNGER_BUCKETS</code>）で <strong>橙（満腹）→ くすんだ赤茶（餓死間近）</strong> に線形補間される。<code>hunger</code> は0=満腹、1=<code>starvationHunger</code>（餓死）。</p>
+<div class="hunger-row" id="hungerRow"></div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. 状態ごとの動くアイコン</h2>
+<p>実装上、個体は毎tick <strong>休憩中フラグ</strong>（<code>rest &gt; 0</code>）で「移動・空腹・捕食を丸ごとスキップする」か「移動して狩る」かの2択（<code>stepCarnivores</code>、<code>sim/carnivore.ts</code>）。アニメーションは8フレームを「歩き」（0〜4）と「捕食」（5〜7）の2ループに分け、捕食が成立したそのtickだけ捕食ループを再生する（<code>pickAnimalFrame</code>、<code>manual.html</code> 5章）。以下のカードはそれぞれ独立にループ再生しているが、実際のゲームでは①→②→③の順に1回ずつしか起きない（③のあとは①に戻る）。</p>
+
+<div class="state-grid">
+
+  <div class="state-card">
+    <div class="stage">
+      <div class="canvas-wrap"><canvas id="stWalk" width="120" height="120"></canvas></div>
+      <div>
+        <h4>① 索敵中（歩き）<span class="badge">通常</span></h4>
+        <p class="trigger"><code>rest === 0</code>：隣8タイル＋自タイルのうち、未捕獲の草食獣が一番多いタイルへ1マス移動</p>
+      </div>
+    </div>
+    <p class="desc">口はほぼ閉じたまま、わずかな上下動と耳の動きだけ（フレーム0〜4）。毎tick <code>hunger += hungerGainPerTick</code>（0.04）で空腹度が上がる。</p>
+  </div>
+
+  <div class="state-card">
+    <div class="stage">
+      <div class="canvas-wrap"><canvas id="stBite" width="120" height="120"></canvas></div>
+      <div>
+        <h4>② 捕食成功（噛みつき）<span class="badge">1 tickだけ</span></h4>
+        <p class="trigger">移動先タイルに草食獣がいれば1体捕獲。<code>hunger −= predationRelief</code>（0.3）、<code>rest = restTicksAfterEating</code>（1）をセット</p>
+      </div>
+    </div>
+    <p class="desc">口を大きく開閉する一噛み（フレーム5〜7）。実際は捕食が成立したtick自体（獲物のいたタイルへ歩いている最中）に1回だけ再生される——このカードは分かりやすさのためループ表示にしている。捕らえた草食獣はその場に死骸を残さず消え、同じ座標に汎用シルエットが縮小・フェードアウトする「被食シーン」が重なる（<code>manual.html</code> 5章）。</p>
+  </div>
+
+  <div class="state-card">
+    <div class="stage">
+      <div class="canvas-wrap"><canvas id="stRest" width="120" height="120"></canvas></div>
+      <div>
+        <h4>③ 休憩中（消化）<span class="badge">凍結</span></h4>
+        <p class="trigger"><code>rest &gt; 0</code>：移動・空腹の上昇・次の捕食判定をまるごとスキップ</p>
+      </div>
+    </div>
+    <p class="desc">位置も空腹度も1tickの間そのまま凍結する。<code>restTicksAfterEating</code>（1）が1なので、②の直後にちょうど1 tickだけこの状態を経て①へ戻る。口は閉じた歩きポーズのまま静止（このtickでは捕食ループの再生条件を満たさない）。</p>
+  </div>
+
+  <div class="state-card">
+    <div class="stage">
+      <div class="canvas-wrap"><canvas id="stDeath" width="120" height="120"></canvas></div>
+      <div>
+        <h4>④ 死亡 → 死骸<span class="badge">餓死／老衰</span></h4>
+        <p class="trigger"><code>hunger ≥ 1</code>（餓死）または <code>age &gt; lifespanTicks</code>（600、老衰）</p>
+      </div>
+    </div>
+    <p class="desc">その場に死骸を1つ残して個体は消える（脚を硬直させ広げ、縞模様は残したまま）。色は新鮮な赤（<code>CARCASS_FRESH_COLOR</code>）から土色（<code>CARCASS_DECAYED_COLOR</code>）へ、<code>decayTicks</code>（10 tick）かけて褪せる。分解し終えると消滅し、<code>CARCASS_PARAMS.fertility</code>（0.4）が土壌養分として返る。</p>
+  </div>
+
+  <div class="state-card">
+    <div class="stage">
+      <div class="canvas-wrap"><canvas id="stBirth" width="120" height="120"></canvas></div>
+      <div>
+        <h4>⑤ 繁殖（新生）<span class="badge">無性生殖</span></h4>
+        <p class="trigger">生き残り、かつ <code>hunger ≤ reproHungerThreshold</code>（0.05）で自分のいるタイルに子を1体</p>
+      </div>
+    </div>
+    <p class="desc">子は <code>initialHunger</code>（0.5、中間の空腹バケット）でその場に現れる——専用の見た目や誕生アニメーションは無く、次のtickから①と同じ歩きループに合流する。親は <code>hunger += reproHungerCost</code>（0.7）。草食獣（しきい値0.15／コスト0.3）よりずっと厳しく、何度も捕食を重ねないと繁殖できない（少産少死、<code>manual.html</code> 4.1章）。</p>
+  </div>
+
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. パラメータ</h2>
+<p><code>src/sim/params.ts</code> の <code>CARNIVORE_PARAMS</code>（および死骸周りの <code>CARCASS_PARAMS</code>、両種共通）の写し。数値の正はソース。</p>
+<div class="table-wrap">
+<table>
+  <tr><th>パラメータ</th><th>値</th><th>意味</th></tr>
+  <tr><td><code>capacity</code></td><td class="num">150</td><td>個体数の上限（草食獣の2000に対し、捕食者は十分少なく保つ）</td></tr>
+  <tr><td><code>initialCount</code></td><td class="num">12</td><td>起動時の初期個体数</td></tr>
+  <tr><td><code>hungerGainPerTick</code></td><td class="num">0.04</td><td>1tickごとに空腹度が上がる量（草食獣0.05より遅い＝少し長く持つ）</td></tr>
+  <tr><td><code>predationRelief</code></td><td class="num">0.3</td><td>1回の捕食で空腹度が下がる量</td></tr>
+  <tr><td><code>starvationHunger</code></td><td class="num">1.0</td><td>これに達すると餓死</td></tr>
+  <tr><td><code>initialHunger</code></td><td class="num">0.5</td><td>誕生時（初期配置・繁殖）の空腹度</td></tr>
+  <tr><td><code>reproHungerThreshold</code></td><td class="num">0.05</td><td>これ以下でないと繁殖できない（草食獣0.15より厳しい）</td></tr>
+  <tr><td><code>reproHungerCost</code></td><td class="num">0.7</td><td>繁殖のたびに親の空腹度が上がる量（草食獣0.3より重い）</td></tr>
+  <tr><td><code>restTicksAfterEating</code></td><td class="num">1</td><td>捕食成功tickの直後、動かず消化に費やすtick数</td></tr>
+  <tr><td><code>lifespanTicks</code></td><td class="num">600（約1200秒）</td><td>これを超えると老衰死（草食獣200の3倍）</td></tr>
+</table>
+<table>
+  <tr><th>パラメータ（共通・<code>CARCASS_PARAMS</code>）</th><th>値</th><th>意味</th></tr>
+  <tr><td><code>fertility</code></td><td class="num">0.4</td><td>死骸1体が分解し終えるまでに返す土壌養分の総量（種によらず一定）</td></tr>
+  <tr><td><code>decayTicks</code></td><td class="num">10（約20秒）</td><td>発生してから消えるまでの実質tick数</td></tr>
+</table>
+</div>
+<div class="callout">
+  <strong>ピラミッドの原則：</strong>肉食獣は食物連鎖の上の段ほど「少なく・遅く・長生き」（design.mdの少産少死）。上限個体数・初期個体数・繁殖しやすさは草食獣より小さく／厳しく、寿命は3倍長い。詳しい比較表は <a href="manual.html#s4">manual.html 4.1章</a>。
+</div>
+
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---- src/render/sprites.ts からそのまま写した描画ロジック（このページ限定の演出は無し） ----
+  function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
+  function lerpTuple(a, b, t) { return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]; }
+  function toCss(c) { return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
+  function lerpColor(a, b, t) { return toCss(lerpTuple(a, b, t)); }
+
+  const SOIL_COLOR = [0x3b, 0x2f, 0x22];
+  const CARNIVORE_HEALTHY = [0xf2, 0xa3, 0x3a];
+  const CARNIVORE_HUNGRY = [0x8a, 0x5a, 0x3a];
+  const TIGER_MOUTH_COLOR = [0xc2, 0x3b, 0x3b];
+  const STRIPE_COLOR = [0x33, 0x1c, 0x12];
+  const CARCASS_FRESH_COLOR = [0xb2, 0x3a, 0x3a];
+  const CARCASS_DECAYED_COLOR = SOIL_COLOR;
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function drawFeet(ctx, bw, bh, r, color, radiusFactor) {
+    ctx.fillStyle = color;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(-bw * 0.55, side * bh * 0.85, r * radiusFactor, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function drawMouth(ctx, mx, my, bw, r, mouthOpen, color, openAmount, baseWidth, widen) {
+    const mouthW = bw * (baseWidth + widen * mouthOpen);
+    const mouthH = r * (0.07 + openAmount * mouthOpen);
+    ctx.fillStyle = color;
+    roundRectPath(ctx, mx - mouthW / 2, my - mouthH / 2, mouthW, mouthH, mouthH * 0.4);
+    ctx.fill();
+  }
+
+  function drawTigerShape(ctx, cx, cy, size, pose, tint) {
+    const r = size / 2;
+    const bodyTuple = lerpTuple(CARNIVORE_HEALTHY, CARNIVORE_HUNGRY, tint);
+    const earColor = toCss(lerpTuple(bodyTuple, SOIL_COLOR, 0.25));
+    const footColor = toCss(lerpTuple(bodyTuple, SOIL_COLOR, 0.35));
+
+    ctx.save();
+    ctx.translate(cx, cy + pose.bob * r);
+    const sx = 1 + pose.squash;
+    const sy = 1 - pose.squash * 0.8;
+    ctx.scale(sx, sy);
+
+    const bw = r * 0.88;
+    const bh = r * 0.6;
+    const cr = r * 0.22;
+
+    drawFeet(ctx, bw, bh, r, footColor, 0.18);
+
+    ctx.fillStyle = earColor;
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(-bw * 0.62, side * bh * 0.85);
+      ctx.rotate(side * 0.4 + pose.earAngle);
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.16, side * r * 0.14);
+      ctx.lineTo(0, -side * r * 0.32);
+      ctx.lineTo(r * 0.16, side * r * 0.14);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    ctx.fillStyle = toCss(bodyTuple);
+    roundRectPath(ctx, -bw, -bh, bw * 2, bh * 2, cr);
+    ctx.fill();
+
+    ctx.strokeStyle = toCss(STRIPE_COLOR);
+    ctx.lineWidth = r * 0.1;
+    ctx.lineCap = 'round';
+    for (const sOff of [-0.5, -0.1, 0.3]) {
+      ctx.beginPath();
+      ctx.moveTo(sOff * bw, -bh * 0.75);
+      ctx.lineTo(sOff * bw - r * 0.16, bh * 0.75);
+      ctx.stroke();
+    }
+
+    drawMouth(ctx, bw * 0.82, bh * 0.4, bw, r, pose.mouthOpen, toCss(TIGER_MOUTH_COLOR), 0.55, 0.75, 0.25);
+
+    ctx.restore();
+  }
+
+  function drawFallenLegs(ctx, bw, bh, r, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = r * 0.14;
+    ctx.lineCap = 'round';
+    for (const t of [-0.55, -0.15, 0.25, 0.6]) {
+      ctx.beginPath();
+      ctx.moveTo(t * bw, bh * 0.95);
+      ctx.lineTo(t * bw + r * 0.22, bh * 1.35);
+      ctx.stroke();
+    }
+  }
+
+  function drawCarnivoreCarcass(ctx, cx, cy, size, t) {
+    const r = size / 2;
+    const bodyColor = lerpColor(CARCASS_FRESH_COLOR, CARCASS_DECAYED_COLOR, t);
+    const limbColor = lerpColor(CARCASS_FRESH_COLOR, CARCASS_DECAYED_COLOR, Math.min(1, t + 0.15));
+    const stripeColor = lerpColor(STRIPE_COLOR, CARCASS_DECAYED_COLOR, Math.min(1, t * 0.6 + 0.1));
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    const bw = r * 0.88;
+    const bh = r * 0.5;
+
+    drawFallenLegs(ctx, bw, bh, r, limbColor);
+
+    ctx.fillStyle = bodyColor;
+    roundRectPath(ctx, -bw, -bh, bw * 2, bh * 2, r * 0.22);
+    ctx.fill();
+
+    ctx.strokeStyle = stripeColor;
+    ctx.lineWidth = r * 0.09;
+    ctx.lineCap = 'round';
+    for (const sOff of [-0.5, -0.1, 0.3]) {
+      ctx.beginPath();
+      ctx.moveTo(sOff * bw, -bh * 0.7);
+      ctx.lineTo(sOff * bw - r * 0.14, bh * 0.7);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // 8フレーム: 0-4 歩き, 5-7 捕食（sprites.ts の TIGER_POSES / pickAnimalFrame と同一）
+  const TIGER_POSES = [
+    { bob: 0.0, squash: 0.0, earAngle: 0.0, mouthOpen: 0.03 },
+    { bob: 0.015, squash: 0.0, earAngle: 0.05, mouthOpen: 0.03 },
+    { bob: 0.02, squash: 0.0, earAngle: 0.1, mouthOpen: 0.04 },
+    { bob: 0.01, squash: 0.0, earAngle: 0.03, mouthOpen: 0.03 },
+    { bob: 0.005, squash: 0.0, earAngle: -0.02, mouthOpen: 0.03 },
+    { bob: 0.02, squash: -0.08, earAngle: 0.1, mouthOpen: 0.55 },
+    { bob: -0.04, squash: 0.14, earAngle: -0.1, mouthOpen: 0.9 },
+    { bob: 0.0, squash: 0.02, earAngle: 0.02, mouthOpen: 0.35 },
+  ];
+  const WALK_FRAME_COUNT = 5;
+  const BITE_FRAME_COUNT = TIGER_POSES.length - WALK_FRAME_COUNT;
+
+  function pickAnimalFrame(counter, eating) {
+    if (eating) return WALK_FRAME_COUNT + (((counter % BITE_FRAME_COUNT) + BITE_FRAME_COUNT) % BITE_FRAME_COUNT);
+    return ((counter % WALK_FRAME_COUNT) + WALK_FRAME_COUNT) % WALK_FRAME_COUNT;
+  }
+
+  function clearBg(ctx, w, h) {
+    ctx.clearRect(0, 0, w, h);
+  }
+
+  // ---- ページ側の駆動ロジック（ここから下はドキュメント専用） ----
+  const STEP_MS = 180; // 1アニメーションフレームあたりの表示時間（tick長ではなく見やすさ優先）
+
+  function animatedIcon(canvasId, opts) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width * 0.78;
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    let counter = 0;
+    function frame() {
+      clearBg(ctx, canvas.width, canvas.height);
+      const poseIndex = opts.frozen ? 0 : pickAnimalFrame(counter, !!opts.eating);
+      const pose = TIGER_POSES[poseIndex];
+      drawTigerShape(ctx, cx, cy, size, pose, opts.tint ?? 0);
+      if (!opts.frozen) counter++;
+    }
+    frame();
+    return setInterval(frame, STEP_MS);
+  }
+
+  function staticIcon(canvasId, tint) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width * 0.78;
+    drawTigerShape(ctx, canvas.width / 2, canvas.height / 2, size, TIGER_POSES[0], tint);
+  }
+
+  function carcassLoop(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width * 0.78;
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const periodMs = 3200;
+    function frame(t) {
+      const phase = (t % periodMs) / periodMs; // 0..1 を繰り返す
+      const decayT = phase < 0.85 ? phase / 0.85 : 1; // 新鮮→分解、少し保持してループ
+      clearBg(ctx, canvas.width, canvas.height);
+      drawCarnivoreCarcass(ctx, cx, cy, size, decayT);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function birthLoop(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width * 0.78;
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const periodMs = 2600;
+    function frame(t) {
+      const phase = (t % periodMs) / periodMs;
+      const appear = Math.min(1, phase / 0.35); // 現れる
+      const hold = phase < 0.35 ? 0 : (phase - 0.35) / 0.65;
+      clearBg(ctx, canvas.width, canvas.height);
+      ctx.save();
+      ctx.globalAlpha = appear;
+      ctx.translate(cx, cy);
+      ctx.scale(0.6 + appear * 0.4, 0.6 + appear * 0.4);
+      const poseIdx = pickAnimalFrame(Math.floor(hold * 6), false);
+      drawTigerShape(ctx, 0, 0, size, TIGER_POSES[poseIdx], 0.5); // initialHunger=0.5 の中間色
+      ctx.restore();
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // hero: ゆるい歩きループ、健康な色
+  animatedIcon('hero', { tint: 0.15 });
+
+  // 空腹バケット5段階
+  const hungerRow = document.getElementById('hungerRow');
+  const HUNGER_LABELS = ['0.0 満腹', '0.25', '0.5', '0.75', '1.0 餓死間近'];
+  HUNGER_LABELS.forEach((label, i) => {
+    const cell = document.createElement('div');
+    cell.className = 'hunger-cell';
+    const canvas = document.createElement('canvas');
+    canvas.width = 76; canvas.height = 76;
+    canvas.id = 'hunger' + i;
+    const lab = document.createElement('div');
+    lab.className = 'lab';
+    lab.textContent = label;
+    cell.appendChild(canvas);
+    cell.appendChild(lab);
+    hungerRow.appendChild(cell);
+  });
+  HUNGER_LABELS.forEach((_, i) => staticIcon('hunger' + i, i / (HUNGER_LABELS.length - 1)));
+
+  // 状態カード
+  animatedIcon('stWalk', { tint: 0.1 });
+  animatedIcon('stBite', { tint: 0.3, eating: true });
+  animatedIcon('stRest', { tint: 0.3, frozen: true });
+  carcassLoop('stDeath');
+  birthLoop('stBirth');
+})();
+</script>
+
+</body>
+</html>

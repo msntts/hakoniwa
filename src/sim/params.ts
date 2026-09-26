@@ -31,6 +31,24 @@ export const GRASS_PARAMS = {
   // Kept just as small as spreadRate for the same reason: it must stay too
   // weak to prop up a herd that would otherwise starve out.
   senescenceRate: 0.0001,
+
+  // Initial board layout: a handful of round meadows (patches) scattered
+  // over otherwise-bare ground, instead of independent per-tile noise
+  // everywhere (see seedGrass in grass.ts). 14 patches at these radii cover
+  // a meaningful fraction of an 80x45 board without tiling into one
+  // undifferentiated lawn -- there's real bare ground between them for a
+  // herd to have to cross.
+  patchCount: 14,
+  patchRadiusMin: 6,
+  patchRadiusMax: 14,
+  // Biomass at a patch's own center -- individual patches vary in how lush
+  // they are, not just in size.
+  patchPeakMin: 0.6,
+  patchPeakMax: 0.95,
+  // Per-tile jitter added on top of the patch falloff (both inside patches
+  // and on bare ground) so it doesn't read as a perfectly smooth gradient or
+  // a perfectly flat void -- texture, not a second source of biomass.
+  patchNoise: 0.05,
 };
 
 export const HERBIVORE_PARAMS = {
