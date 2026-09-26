@@ -46,7 +46,7 @@ export const HERBIVORE_PARAMS = {
   // no grass. Hunger has no reserve to bank -- it climbs every tick and only
   // drops when a bite actually lands, so it reflects *current* feeding, not
   // feeding history.
-  hungerGainPerTick: 0.05, // unfed, hits starvation (1.0) in ~20 ticks (~1 epoch)
+  hungerGainPerTick: 0.05, // unfed, hits starvation (1.0) in ~20 ticks (~40s, ~4 epochs at DEFAULT_TICK_MS/DEFAULT_EPOCH_MS)
   // Deliberately close to hungerGainPerTick: at 0.25 a single lucky bite once
   // every several ticks was enough to stay reproduction-ready forever, so a
   // crowded herd on a mostly-grazed board never actually ran out of steam.
@@ -101,11 +101,12 @@ export const HERBIVORE_PARAMS = {
   excretionRatio: 0.5, // fraction of each bite returned to the tile as fertility
 
   // 多産多死 (base of the pyramid): short-lived and quick to breed. At 2000
-  // ticks (1000s) old age never actually fired, so starvation was the only
-  // source of death and a population that found even scraps of food just
-  // sat there indefinitely. At 200 ticks (100s / ~10 epochs) the herd needs
-  // constant reproduction to hold its numbers -- once food gets scarce
-  // enough that reproduction stops keeping up, aging alone thins it fast.
+  // ticks (~4000s at DEFAULT_TICK_MS) old age never actually fired, so
+  // starvation was the only source of death and a population that found
+  // even scraps of food just sat there indefinitely. At 200 ticks (~400s,
+  // ~40 epochs at DEFAULT_TICK_MS/DEFAULT_EPOCH_MS) the herd needs constant
+  // reproduction to hold its numbers -- once food gets scarce enough that
+  // reproduction stops keeping up, aging alone thins it fast.
   lifespanTicks: 200,
   visionRadius: 3,
 };
@@ -164,5 +165,5 @@ export const CARCASS_PARAMS = {
   // loop made concrete: death pays off the next growth only once
   // decomposition actually finishes.
   fertility: 0.4,
-  decayTicks: 10, // ~5s
+  decayTicks: 10, // ~20s at DEFAULT_TICK_MS
 };
