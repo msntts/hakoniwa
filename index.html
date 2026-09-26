@@ -29,6 +29,22 @@
         image-rendering: pixelated;
         border: 1px solid #333;
       }
+      #dashboard {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .hist-card {
+        background: #181818;
+        border: 1px solid #333;
+        border-radius: 6px;
+        padding: 4px;
+      }
+      .hist-card canvas {
+        image-rendering: auto;
+        border: none;
+        display: block;
+      }
     </style>
   </head>
   <body>
@@ -41,6 +57,11 @@
         <button id="btn-pause">pause</button>
       </div>
       <canvas id="board"></canvas>
+      <div id="dashboard">
+        <div class="hist-card"><canvas id="hist-grass"></canvas></div>
+        <div class="hist-card"><canvas id="hist-hunger"></canvas></div>
+        <div class="hist-card"><canvas id="hist-age"></canvas></div>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

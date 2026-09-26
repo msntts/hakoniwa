@@ -76,6 +76,19 @@ export interface PredationSnapshot {
   count: number;
 }
 
+// Dashboard-only aggregates (sim/stats.ts's computeHistogram), sent alongside
+// the normal per-tick snapshots so main.ts can draw a live distribution
+// without shipping every tile's biomass or every individual's hunger/age over
+// the wire each tick. Each array has HISTOGRAM_BINS equal-width buckets
+// covering a fixed domain: grassBiomass over [0, GRASS_PARAMS.capacity],
+// herbivoreHunger over [0, HERBIVORE_PARAMS.starvationHunger], herbivoreAge
+// over [0, HERBIVORE_PARAMS.lifespanTicks].
+export interface Histograms {
+  grassBiomass: Uint32Array;
+  herbivoreHunger: Uint32Array;
+  herbivoreAge: Uint32Array;
+}
+
 export type MainToWorker =
   | { type: 'init'; width: number; height: number; tickMs: number; epochMs: number; seed?: number }
   | { type: 'start' }
@@ -93,6 +106,7 @@ export type WorkerToMain =
       herbivores: HerbivoreSnapshot;
       carnivores: CarnivoreSnapshot;
       carcasses: CarcassSnapshot;
+      histograms: Histograms;
     }
   | {
       type: 'tick';
@@ -102,5 +116,6 @@ export type WorkerToMain =
       carnivores: CarnivoreSnapshot;
       carcasses: CarcassSnapshot;
       predations: PredationSnapshot;
+      histograms: Histograms;
     }
   | { type: 'epoch'; epochIndex: number };
