@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hakoniwa 草食獣図鑑</title>
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --fg: #22211f;
+    --muted: #6b6760;
+    --line: #dcd8d0;
+    --panel: #f2efe8;
+    --accent: #2f6f3e;
+    --warn: #9a5b12;
+    --bad: #9b2c2c;
+    --ok: #2f6f3e;
+    --grass: #d9ecd6;
+    --soil: #eadfd1;
+    --herb: #f6e7a8;
+    --carn: #f7d0bd;
+    --carcass: #ecd3d3;
+    --fur-healthy: #c98a3d;
+    --fur-hungry: #8f7d52;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1918;
+      --fg: #e8e5df;
+      --muted: #a39e95;
+      --line: #3a3733;
+      --panel: #24221f;
+      --accent: #7cc48a;
+      --warn: #e0a55a;
+      --bad: #e88080;
+      --ok: #7cc48a;
+      --grass: #253a27;
+      --soil: #3a3026;
+      --herb: #423a18;
+      --carn: #45281c;
+      --carcass: #3e2626;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1918; --fg: #e8e5df; --muted: #a39e95; --line: #3a3733; --panel: #24221f;
+    --accent: #7cc48a; --warn: #e0a55a; --bad: #e88080; --ok: #7cc48a;
+    --grass: #253a27; --soil: #3a3026; --herb: #423a18; --carn: #45281c; --carcass: #3e2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.75 system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 96px; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: 0.02em; }
+  h2 { font-size: 21px; margin: 48px 0 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 22px 0 8px; color: var(--muted); }
+  p { margin: 8px 0; }
+  .lede { color: var(--muted); margin-bottom: 20px; }
+  a { color: var(--accent); }
+  code { font: 13px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; background: var(--panel); padding: 1px 5px; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 14px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; }
+  td.num { font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+  .table-wrap { overflow-x: auto; }
+  .callout { border-left: 3px solid var(--accent); background: var(--panel); padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .small { font-size: 13px; color: var(--muted); }
+  .back { font-size: 13px; }
+
+  .icon-stage {
+    display: flex; align-items: center; justify-content: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px;
+  }
+  .icon-stage canvas { display: block; }
+
+  .hunger-row { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; }
+  .hunger-item { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; }
+  .hunger-item canvas { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+  .hunger-item span { font-size: 12px; color: var(--muted); font-family: ui-monospace, Consolas, monospace; }
+  .hunger-bar { position: relative; height: 8px; border-radius: 5px; margin-top: 16px;
+    background: linear-gradient(90deg, var(--fur-healthy), var(--fur-hungry)); }
+  .hunger-marker { position: absolute; top: -3px; width: 2px; height: 14px; background: var(--fg); opacity: 0.5; }
+  .hunger-labels { position: relative; height: 16px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .hunger-labels span { position: absolute; white-space: nowrap; }
+
+  .state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-top: 14px; }
+  .state-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .state-card .stage { align-self: center; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+  .state-card .stage canvas { display: block; }
+  .state-card h4 { margin: 0; font-size: 15px; }
+  .state-card p { font-size: 13px; color: var(--muted); margin: 0; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.001ms !important; } }
+</style>
+</head>
+<body>
+<main>
+
+<p class="back"><a href="manual.html">&larr; マニュアルに戻る</a></p>
+<h1>草食獣 図鑑</h1>
+<p class="lede">ピラミッド最下段、草を食べる側の種族についてのアイコン・状態別アニメーション・パラメータのまとめ。</p>
+
+<div class="callout">
+  数値の正は <code>src/sim/params.ts</code>、処理順・不変条件はマニュアル本体（<a href="manual.html#s4">4.3 草食獣</a>、<a href="manual.html#s7">7章</a>）を参照。この文書はそこから草食獣だけを抜き出して見た目つきで整理したもの。
+</div>
+
+<h2>アイコン</h2>
+<p>丸みを帯びた箱型の体に、四角い口（<code>src/render/sprites.ts</code> の <code>drawHerbivoreShape</code>）。角や牙は無く、捕食される側として柔らかく見える。体色は健康な橙褐色から、空腹が進むほど鈍い灰褐色へ連続的に沈む。</p>
+<div class="icon-stage">
+  <canvas id="heroCanvas"></canvas>
+</div>
+
+<h3>空腹度 <code>hunger</code> による色の変化</h3>
+<div class="hunger-row" id="hungerRow"></div>
+<div class="hunger-bar">
+  <div class="hunger-marker" style="left: 15%;"></div>
+  <div class="hunger-marker" style="left: 100%; transform: translateX(-2px);"></div>
+</div>
+<div class="hunger-labels">
+  <span style="left: 0%;">0.0 満腹</span>
+  <span style="left: 15%; transform: translateX(-50%);">0.15 繁殖可</span>
+  <span style="right: 0%;">1.0 餓死</span>
+</div>
+
+<h2>状態別アニメーション</h2>
+<p>見た目に現れる状態は3つ。「休憩」は独立した見た目を持たず、噛みアニメの再生が終わった後は徘徊と同じ穏やかな姿勢で静止するだけ。</p>
+
+<div class="state-grid">
+  <div class="state-card">
+    <div class="stage"><canvas id="walkCanvas"></canvas></div>
+    <h4>徘徊</h4>
+    <p>草が一番多い隣接タイルへ1マス移動。口はほとんど閉じ、軽い上下動と耳の揺れだけ。<code>rest === 0</code> の間のデフォルト姿勢。</p>
+  </div>
+  <div class="state-card">
+    <div class="stage"><canvas id="biteCanvas"></canvas></div>
+    <h4>採食</h4>
+    <p>草0.1超のタイルで最大0.15食べ、口を大きく開閉する。この後 <code>restTicksAfterEating</code>（2 tick／4秒）休む。噛みアニメが映るのは休憩の最初の1tickだけ（<a href="manual.html#s7">INV-17</a>）。</p>
+  </div>
+  <div class="state-card">
+    <div class="stage"><canvas id="carcassCanvas"></canvas></div>
+    <h4>死骸</h4>
+    <p>餓死・老衰で発生。生々しい赤から土色へ色が抜け、分解が終わると消える（実質10 tick／約20秒。表示はデモ用に速めてある）。分解中はこのタイルに他個体が移動できない。</p>
+  </div>
+</div>
+
+<h2>パラメータ</h2>
+<p class="small">実時間は既定の <code>DEFAULT_TICK_MS = 2000ms</code>（1 tick = 2秒）換算。速度調整UIで変わる。</p>
+
+<div class="table-wrap">
+<table>
+  <caption class="small" style="text-align:left; margin-bottom: 4px;"><code>src/sim/params.ts</code> — <code>HERBIVORE_PARAMS</code></caption>
+  <tr><th>パラメータ</th><th>値</th><th>実時間</th><th>意味</th></tr>
+  <tr><td><code>capacity</code></td><td class="num">2000</td><td class="num">—</td><td>個体数の上限（配列の物理サイズ）</td></tr>
+  <tr><td><code>initialCount</code></td><td class="num">150</td><td class="num">—</td><td>起動時の初期個体数</td></tr>
+  <tr><td><code>hungerGainPerTick</code></td><td class="num">0.05</td><td class="num">—</td><td>空腹度の毎tick上昇量。無補給なら20 tickで餓死ラインに達する</td></tr>
+  <tr><td><code>grazeHungerRelief</code></td><td class="num">0.1</td><td class="num">—</td><td>一口（最大0.15食べた分）で下がる空腹度</td></tr>
+  <tr><td><code>grazeBiomassThreshold</code></td><td class="num">0.1</td><td class="num">—</td><td>これを超える草があるタイルでしか食べられない</td></tr>
+  <tr><td><code>starvationHunger</code></td><td class="num">1.0</td><td class="num">—</td><td>これ以上になると餓死</td></tr>
+  <tr><td><code>initialHunger</code></td><td class="num">0.5</td><td class="num">—</td><td>誕生時（子・初期個体とも）の空腹度</td></tr>
+  <tr><td><code>reproHungerThreshold</code></td><td class="num">0.15</td><td class="num">—</td><td>これ以下でなければ繁殖できない（過去の蓄えは無効）</td></tr>
+  <tr><td><code>reproHungerCost</code></td><td class="num">0.3</td><td class="num">—</td><td>繁殖時に親の空腹度に加わる量</td></tr>
+  <tr><td><code>restTicksAfterEating</code></td><td class="num">2 tick</td><td class="num">4秒</td><td>採食後、移動・再摂食を止めて静止する長さ。空腹度も凍結</td></tr>
+  <tr><td><code>excretionRatio</code></td><td class="num">0.5</td><td class="num">—</td><td>食べた量のうち、そのタイルの養分へ還す割合（排泄）</td></tr>
+  <tr><td><code>lifespanTicks</code></td><td class="num">200 tick</td><td class="num">約400秒</td><td>この年齢を超えると老衰死</td></tr>
+  <tr style="opacity:.7"><td><code>visionRadius</code></td><td class="num">3</td><td class="num">—</td><td>定義済みだが未接続。移動判定は常に隣接8タイルのみで、この値は現在どこからも参照されていない</td></tr>
+</table>
+</div>
+
+<h3>関連パラメータ（他モジュール所属・草食獣に影響）</h3>
+<div class="table-wrap">
+<table>
+  <tr><th>パラメータ</th><th>値</th><th>実時間</th><th>意味</th></tr>
+  <tr><td><code>GRASS_PARAMS.grazePerBite</code></td><td class="num">0.15</td><td class="num">—</td><td>一口で減らせる草の最大量（草側の値。空腹減少はこの一部だけが反映される）</td></tr>
+  <tr><td><code>CARCASS_PARAMS.fertility</code></td><td class="num">0.4</td><td class="num">—</td><td>死骸1体が分解完了までに土壌へ返す養分の総量（種によらず共通）</td></tr>
+  <tr><td><code>CARCASS_PARAMS.decayTicks</code></td><td class="num">10 tick</td><td class="num">約20秒</td><td>死骸が消えるまでの実質tick数</td></tr>
+</table>
+</div>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var HEALTHY = [201, 138, 61];
+  var HUNGRY = [143, 125, 82];
+  var MOUTH = [156, 92, 79];
+  var SOIL = [59, 47, 34];
+  var CARCASS_FRESH = [178, 58, 58];
+  var CARCASS_DECAYED = SOIL;
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function lerpTuple(a, b, t) { return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]; }
+  function toCss(c) { return "rgb(" + Math.round(c[0]) + "," + Math.round(c[1]) + "," + Math.round(c[2]) + ")"; }
+  function lerpColor(a, b, t) { return toCss(lerpTuple(a, b, t)); }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    var rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function drawFeet(ctx, bw, bh, r, color, radiusFactor) {
+    ctx.fillStyle = color;
+    [-1, 1].forEach(function (side) {
+      ctx.beginPath();
+      ctx.arc(-bw * 0.55, side * bh * 0.85, r * radiusFactor, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  function drawMouth(ctx, mx, my, bw, r, mouthOpen, color, openAmount, baseWidth, widen) {
+    var mouthW = bw * (baseWidth + widen * mouthOpen);
+    var mouthH = r * (0.07 + openAmount * mouthOpen);
+    ctx.fillStyle = color;
+    roundRectPath(ctx, mx - mouthW / 2, my - mouthH / 2, mouthW, mouthH, mouthH * 0.4);
+    ctx.fill();
+  }
+
+  // pose: {bob, squash, earAngle, mouthOpen}; tint: 0 (healthy) .. 1 (hungry)
+  function drawHerbivore(ctx, cx, cy, size, pose, tint) {
+    var r = size / 2;
+    var bodyTuple = lerpTuple(HEALTHY, HUNGRY, tint);
+    var earColor = toCss(lerpTuple(bodyTuple, SOIL, 0.18));
+    var footColor = toCss(lerpTuple(bodyTuple, SOIL, 0.35));
+
+    ctx.save();
+    ctx.translate(cx, cy + pose.bob * r);
+    var sx = 1 + pose.squash;
+    var sy = 1 - pose.squash * 0.8;
+    ctx.scale(sx, sy);
+
+    var bw = r * 0.72;
+    var bh = r * 0.7;
+    var cr = r * 0.5;
+
+    drawFeet(ctx, bw, bh, r, footColor, 0.16);
+
+    ctx.fillStyle = earColor;
+    [-1, 1].forEach(function (side) {
+      ctx.save();
+      ctx.translate(-bw * 0.7, side * bh * 0.95);
+      ctx.rotate(side * 0.5 + pose.earAngle);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-r * 0.05, -side * r * 0.34);
+      ctx.lineTo(r * 0.22, -side * r * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    });
+
+    ctx.fillStyle = toCss(bodyTuple);
+    roundRectPath(ctx, -bw, -bh, bw * 2, bh * 2, cr);
+    ctx.fill();
+
+    drawMouth(ctx, bw * 0.78, bh * 0.4, bw, r, pose.mouthOpen, toCss(MOUTH), 0.3, 0.85, 0.3);
+
+    ctx.restore();
+  }
+
+  function drawFallenLegs(ctx, bw, bh, r, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = r * 0.14;
+    ctx.lineCap = "round";
+    [-0.55, -0.15, 0.25, 0.6].forEach(function (t) {
+      ctx.beginPath();
+      ctx.moveTo(t * bw, bh * 0.95);
+      ctx.lineTo(t * bw + r * 0.22, bh * 1.35);
+      ctx.stroke();
+    });
+  }
+
+  function drawHerbivoreCarcass(ctx, cx, cy, size, t) {
+    var r = size / 2;
+    var bodyColor = lerpColor(CARCASS_FRESH, CARCASS_DECAYED, t);
+    var limbColor = lerpColor(CARCASS_FRESH, CARCASS_DECAYED, Math.min(1, t + 0.15));
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    var bw = r * 0.72;
+    var bh = r * 0.62;
+
+    drawFallenLegs(ctx, bw, bh, r, limbColor);
+
+    ctx.fillStyle = limbColor;
+    [-1, 1].forEach(function (side) {
+      ctx.save();
+      ctx.translate(-bw * 0.7, side * bh * 0.95);
+      ctx.rotate(side * 1.4);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-r * 0.05, -side * r * 0.34);
+      ctx.lineTo(r * 0.22, -side * r * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    });
+
+    ctx.fillStyle = bodyColor;
+    roundRectPath(ctx, -bw, -bh, bw * 2, bh * 2, r * 0.5);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // 8 baked frames, split walk(0-4) / bite(5-7) -- see sprites.ts HERBIVORE_POSES.
+  var POSES = [
+    { bob: 0.0, squash: 0.0, earAngle: 0.0, mouthOpen: 0.03 },
+    { bob: 0.02, squash: 0.0, earAngle: 0.04, mouthOpen: 0.04 },
+    { bob: 0.03, squash: 0.0, earAngle: 0.08, mouthOpen: 0.04 },
+    { bob: 0.02, squash: 0.0, earAngle: 0.04, mouthOpen: 0.03 },
+    { bob: 0.01, squash: 0.0, earAngle: 0.0, mouthOpen: 0.03 },
+    { bob: 0.02, squash: 0.06, earAngle: 0.08, mouthOpen: 0.35 },
+    { bob: -0.02, squash: 0.16, earAngle: -0.04, mouthOpen: 0.65 },
+    { bob: 0.0, squash: 0.06, earAngle: 0.06, mouthOpen: 0.3 }
+  ];
+  var WALK_COUNT = 5;
+  var BITE_COUNT = POSES.length - WALK_COUNT;
+
+  function walkFrame(n) { return POSES[((n % WALK_COUNT) + WALK_COUNT) % WALK_COUNT]; }
+  function biteFrame(n) { return POSES[WALK_COUNT + (((n % BITE_COUNT) + BITE_COUNT) % BITE_COUNT)]; }
+
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function setupCanvas(canvas, cssSize) {
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = cssSize * dpr;
+    canvas.height = cssSize * dpr;
+    canvas.style.width = cssSize + "px";
+    canvas.style.height = cssSize + "px";
+    var ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    return ctx;
+  }
+
+  function runLoop(ctx, cssSize, fps, frameFn) {
+    if (reduceMotion) { ctx.clearRect(0, 0, cssSize, cssSize); frameFn(0); return; }
+    var interval = 1000 / fps;
+    var last = 0, n = 0;
+    function tick(ts) {
+      if (ts - last >= interval) {
+        last = ts;
+        ctx.clearRect(0, 0, cssSize, cssSize);
+        frameFn(n);
+        n++;
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  var heroSize = 140;
+  var heroCtx = setupCanvas(document.getElementById("heroCanvas"), heroSize);
+  drawHerbivore(heroCtx, heroSize / 2, heroSize / 2, heroSize * 0.82, walkFrame(0), 0.15);
+
+  var hungerRow = document.getElementById("hungerRow");
+  [0, 0.25, 0.5, 0.75, 1.0].forEach(function (v) {
+    var wrap = document.createElement("div");
+    wrap.className = "hunger-item";
+    var canvas = document.createElement("canvas");
+    wrap.appendChild(canvas);
+    var label = document.createElement("span");
+    label.textContent = v.toFixed(2);
+    wrap.appendChild(label);
+    hungerRow.appendChild(wrap);
+    var size = 56;
+    var ctx = setupCanvas(canvas, size);
+    drawHerbivore(ctx, size / 2, size / 2, size * 0.82, walkFrame(0), v);
+  });
+
+  var walkSize = 104;
+  var walkCtx = setupCanvas(document.getElementById("walkCanvas"), walkSize);
+  runLoop(walkCtx, walkSize, 6, function (n) {
+    drawHerbivore(walkCtx, walkSize / 2, walkSize / 2, walkSize * 0.82, walkFrame(n), 0.2);
+  });
+
+  var biteSize = 104;
+  var biteCtx = setupCanvas(document.getElementById("biteCanvas"), biteSize);
+  runLoop(biteCtx, biteSize, 7, function (n) {
+    drawHerbivore(biteCtx, biteSize / 2, biteSize / 2, biteSize * 0.82, biteFrame(n), 0.2);
+  });
+
+  var carcassSize = 104;
+  var carcassCtx = setupCanvas(document.getElementById("carcassCanvas"), carcassSize);
+  (function () {
+    var durationMs = 5000;
+    function frameAt(t) {
+      carcassCtx.clearRect(0, 0, carcassSize, carcassSize);
+      var alpha = 1;
+      if (t > 0.85) alpha = Math.max(0, 1 - (t - 0.85) / 0.15);
+      carcassCtx.globalAlpha = alpha;
+      drawHerbivoreCarcass(carcassCtx, carcassSize / 2, carcassSize / 2 * 1.05, carcassSize * 0.72, t);
+      carcassCtx.globalAlpha = 1;
+    }
+    if (reduceMotion) { frameAt(0.4); return; }
+    function tick(ts) {
+      var t = (ts % durationMs) / durationMs;
+      frameAt(t);
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  })();
+})();
+</script>
+</body>
+</html>
