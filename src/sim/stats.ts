@@ -50,3 +50,12 @@ export function histogramTotal(counts: ArrayLike<number>): number {
   for (let i = 0; i < counts.length; i++) total += counts[i] ?? 0;
   return total;
 }
+
+// Plain sum of `values[0..count)` -- used for the dashboard's board-wide
+// totals (e.g. summed grass biomass/fertility across every tile), as opposed
+// to computeHistogram's per-bucket counts.
+export function sumArray(values: ArrayLike<number>, count: number): number {
+  let total = 0;
+  for (let i = 0; i < count; i++) total += values[i] ?? 0;
+  return total;
+}

@@ -89,6 +89,18 @@ export interface Histograms {
   herbivoreAge: Uint32Array;
 }
 
+// Board-wide sums (sim/stats.ts's sumArray over the full grass arrays), sent
+// alongside Histograms so the dashboard can plot a running total-over-time
+// line -- distinct from a histogram's *distribution* at a single tick, this
+// is the single number needed to see whether the system's material is net
+// growing/shrinking/stable across many ticks (docs/manual.html section 2's
+// "質量は保存されない" means neither total is guaranteed to hold steady by
+// construction; this is what lets that be *observed* instead of assumed).
+export interface Totals {
+  grassBiomass: number;
+  fertility: number;
+}
+
 export type MainToWorker =
   | { type: 'init'; width: number; height: number; tickMs: number; epochMs: number; seed?: number }
   | { type: 'start' }
@@ -107,6 +119,7 @@ export type WorkerToMain =
       carnivores: CarnivoreSnapshot;
       carcasses: CarcassSnapshot;
       histograms: Histograms;
+      totals: Totals;
     }
   | {
       type: 'tick';
@@ -117,5 +130,6 @@ export type WorkerToMain =
       carcasses: CarcassSnapshot;
       predations: PredationSnapshot;
       histograms: Histograms;
+      totals: Totals;
     }
   | { type: 'epoch'; epochIndex: number };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeHistogram, histogramMean, histogramTotal } from '../src/sim/stats';
+import { computeHistogram, histogramMean, histogramTotal, sumArray } from '../src/sim/stats';
 
 describe('computeHistogram', () => {
   it('sorts values into equal-width buckets covering [0, domainMax]', () => {
@@ -49,5 +49,15 @@ describe('histogramMean', () => {
   it('is 0 for an empty histogram', () => {
     const counts = computeHistogram([], 0, 1, 10);
     expect(histogramMean(counts, 1)).toBe(0);
+  });
+});
+
+describe('sumArray', () => {
+  it('adds up the first `count` entries', () => {
+    expect(sumArray([0.5, 0.25, 0.25, 999], 3)).toBeCloseTo(1, 10);
+  });
+
+  it('is 0 for count=0, regardless of the backing array', () => {
+    expect(sumArray([1, 2, 3], 0)).toBe(0);
   });
 });
